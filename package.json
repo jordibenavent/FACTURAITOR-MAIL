@@ -1,0 +1,20 @@
+{
+  "name": "facturaitor-imap",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.10.0",
+    "dotenv": "^17.2.0",
+    "express": "^5.1.0",
+    "fs": "^0.0.1-security",
+    "imap": "^0.8.17",
+    "mailparser": "^3.7.4",
+    "path": "^0.12.7"
+  }
+}
