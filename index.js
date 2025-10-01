@@ -4,20 +4,10 @@ const { simpleParser } = require('mailparser');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const FormData = require('form-data'); // npm install --save form-data
+const FormData = require('form-data');
+const config = require('config');
 
-const imap = new Imap({
-    user: process.env.IMAP_USER,
-    password: process.env.IMAP_PASSWORD,
-    host: process.env.IMAP_HOST,
-    port: process.env.IMAP_PORT,
-    tls: true
-});
-
-function openInbox(box ,cb) {
-                //Abre la bandeja con el nombre entre las comillas, se ejecuta la funcion CB cuando se abre la bandeja
-    imap.openBox(box, false, cb);
-}
+const accounts = config.get('accounts');
 
 async function processAttachment (attachment) {
     try{
@@ -56,74 +46,91 @@ async function processAttachment (attachment) {
     }
 }
 
-imap.once('ready', function () {
-    try {
-        openInbox('INBOX', function (err, box) {
-            if (err) throw err;
+function prepareBox(account){
+    const imap = new Imap(account);
 
-            imap.on('mail', function () {
-                console.log('Nuevos correos detectados, procesando...');
-                
-                imap.openBox('INBOX', false, function (err, box) {
-                    if (err) throw err;
+    const reconnect = () => {
+        console.log(`Reconectando a ${account.user} en 10 segundos...`);
+        setTimeout(() => prepareBox(account), 10000);
+    };
 
-                    imap.seq.search(['UNSEEN'], (err, results) => {
-                        if (err) {
-                            console.error('Error al buscar correos no leídos:', err.message);
-                            return;
-                        }
+    imap.once('ready', function () {
+        try {
+            imap.openBox('INBOX', false, function (err, box) {
+                if (err) throw err;
 
-                        if (!results || results.length === 0) {
-                            console.log('No hay nuevos correos');
-                            return;
-                        }
+                imap.on('mail', function () {
+                    console.log('Nuevos correos detectados, procesando...');
+                    
+                    imap.openBox('INBOX', false, function (err, box) {
+                        if (err) throw err;
 
-                        const fetch = imap.seq.fetch(results, {
-                            bodies: '',
-                            struct: true,
-                            markSeen: true
-                        });
+                        imap.seq.search(['UNSEEN'], (err, results) => {
+                            if (err) {
+                                console.error('Error al buscar correos no leídos:', err.message);
+                                return;
+                            }
 
-                        fetch.on('message', function (msg) {
-                            msg.on('body', function (stream) {
-                                simpleParser(stream, async (err, parsed) => {
-                                    if (err) {
-                                        console.error('Error parseando mensaje:', err.message);
-                                        return;
-                                    }
+                            if (!results || results.length === 0) {
+                                console.log('No hay nuevos correos');
+                                return;
+                            }
 
-                                    if (parsed.attachments && parsed.attachments.length > 0) {
-                                        parsed.attachments.forEach( (x) => {
-                                            if(x.contentType === 'application/pdf') {
-                                                console.log('Adjunto PDF encontrado:', x.filename);
-                                                processAttachment(x).catch(err => {
-                                                    console.error('Error procesando adjunto:', err.message);
-                                                });
-                                            }
-                                        });
-                                    }
+                            const fetch = imap.seq.fetch(results, {
+                                bodies: '',
+                                struct: true,
+                                markSeen: true
+                            });
+
+                            fetch.on('message', function (msg) {
+                                msg.on('body', function (stream) {
+                                    simpleParser(stream, async (err, parsed) => {
+                                        if (err) {
+                                            console.error('Error parseando mensaje:', err.message);
+                                            return;
+                                        }
+
+                                        if (parsed.attachments && parsed.attachments.length > 0) {
+                                            parsed.attachments.forEach( (x) => {
+                                                if(x.contentType === 'application/pdf') {
+                                                    console.log('Adjunto PDF encontrado:', x.filename);
+                                                    processAttachment(x).catch(err => {
+                                                        console.error('Error procesando adjunto:', err.message);
+                                                    });
+                                                }
+                                            });
+                                        }
+                                    });
                                 });
                             });
-                        });
 
-                        fetch.on('error', function (err) {
-                            console.error('Error al buscar mensajes:', err.message);
-                        });
-                    })
+                            fetch.on('error', function (err) {
+                                console.error('Error al buscar mensajes:', err.message);
+                            });
+                        })
+                    });
                 });
             });
-        });
-    } catch (error) {
-        console.error('Error en la bandeja de entrada inbox:', error.message);
-    }
-});
+        } catch (error) {
+            console.error('Error en la bandeja de entrada inbox:', error.message);
+        }
+    });
 
-imap.once('error', function (err) {
-    console.error('Error en IMAP:', err.message);
-});
+    imap.once('error', function (err) {
+        console.error('Error en IMAP:', err.message);
+    });
 
-imap.once('end', function () {
-    console.log('Conexión IMAP terminada');
-});
+    imap.once('end', function () {
+        console.log('Conexión IMAP terminada');
+        reconnect();
+    });
 
-imap.connect();
+    imap.connect();
+}
+
+
+for(const account of accounts) {
+    console.log(`Conectando a ${account.user}...`);
+    prepareBox(account);
+    console.log('Conectado a ' + account.user);
+}
