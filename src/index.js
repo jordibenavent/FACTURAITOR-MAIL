@@ -1,22 +1,29 @@
-require('dotenv').config();
-const Imap = require('imap');
-const { simpleParser } = require('mailparser');
-const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
-const FormData = require('form-data');
-const config = require('config');
+import 'dotenv/config';
+import Imap from 'imap';
+import { simpleParser } from 'mailparser';
+import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
+import FormData from 'form-data';
+import config from 'config';
+import { fileURLToPath } from 'url';
+import { sql, getConnection, getAccounts, putInvoiceData } from './db.js';
 
-const accounts = config.get('accounts');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-async function processAttachment (attachment) {
+async function processAttachment (attachment, from, mailBox) {
     try{
         const filename = attachment.filename;
         if (filename) {
-            const tempPath = path.join(__dirname, 'tmp_' + Date.now() + '.pdf');
-            await fs.promises.writeFile(tempPath, attachment.content);
+            const IdDoc = await putInvoiceData(from, mailBox);
 
-            let data = new FormData();
+            const docPath = path.join(__dirname, 'temp', IdDoc.toString());
+            await fs.promises.mkdir(docPath, { recursive: true });
+            const idDocPath = path.join(docPath, `${IdDoc}.pdf`);
+            await fs.promises.writeFile(idDocPath, attachment.content);
+
+            /*let data = new FormData();
             data.append('', fs.createReadStream(tempPath));
 
             let config = {
@@ -37,12 +44,11 @@ async function processAttachment (attachment) {
                 })
                 .catch((error) => {
                     console.log(error.message)
-                });
+                });*/
         }
     }catch(error){
         console.error('Error procesando adjunto:', attachment.filename);
         console.error('Error:', error.message);
-        return;
     }
 }
 
@@ -83,9 +89,22 @@ function prepareBox(account){
                             });
 
                             fetch.on('message', function (msg) {
+                                let msgUid;
+
+                                msg.on('attributes', function (attrs) {
+                                    msgUid = attrs.uid;
+                                });
+
                                 msg.on('body', function (stream) {
                                     simpleParser(stream, async (err, parsed) => {
                                         if (err) {
+                                            
+                                            if (msgUid) {
+                                                imap.delFlags(msgUid, '\\Seen', (err) => {
+                                                    if (err) console.log('Error desmarcando como no leído:', err.message);
+                                                });
+                                            }
+
                                             console.error('Error parseando mensaje:', err.message);
                                             return;
                                         }
@@ -94,7 +113,9 @@ function prepareBox(account){
                                             parsed.attachments.forEach( (x) => {
                                                 if(x.contentType === 'application/pdf') {
                                                     console.log('Adjunto PDF encontrado:', x.filename);
-                                                    processAttachment(x).catch(err => {
+                                                    //TODO RECOGER LOS ID POR SI HUBIESEN VARIOS ADJUNTOS Y FALLASE DESPUÉS DE HABERSE
+                                                    //PROCESADO ALGUNO REVERTIR LOS CAMBIOS Y MARCAR EL CORREO COMO NO LEIDO
+                                                    processAttachment(x, parsed.from.value[0].address, account.user).catch(err => {
                                                         console.error('Error procesando adjunto:', err.message);
                                                     });
                                                 }
@@ -129,8 +150,22 @@ function prepareBox(account){
 }
 
 
-for(const account of accounts) {
-    console.log(`Conectando a ${account.user}...`);
-    prepareBox(account);
-    console.log('Conectado a ' + account.user);
+try { 
+    const dbAccounts = await getAccounts();
+    const accounts = dbAccounts.recordset;
+    
+    for(const account of accounts) {
+        console.log(`Conectando a ${account.Email}...`);
+        const imapAccount = {
+            user: account.Email,
+            password: account.password,
+            host: account.host,
+            port: account.port,
+            tls: account.tls
+        }
+        prepareBox(imapAccount);
+        console.log('Conectado a ' + account.Email);
+    }
+} catch (error) {
+    console.log('Error obteniendo cuentas de la base de datos:', error.message);    
 }

@@ -1,7 +1,8 @@
 {
+  "type": "module",
   "name": "facturaitor-imap",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -16,6 +17,7 @@
     "fs": "^0.0.1-security",
     "imap": "^0.8.17",
     "mailparser": "^3.7.4",
+    "mssql": "^12.0.0",
     "path": "^0.12.7"
   }
 }

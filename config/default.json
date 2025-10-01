@@ -1,13 +1,4 @@
 {
-    "accounts": [
-        {
-            "user": "",
-            "password": "",
-            "host": "imap.ionos.es",
-            "port": "993",
-            "tls": true
-        }
-    ],
     "api": {
         "url": "http://localhost:3000/",
         "endpoint": "send-pdf"
