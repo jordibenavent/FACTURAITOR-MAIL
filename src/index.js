@@ -48,18 +48,18 @@ function prepareBox(account){
                                 markSeen: false
                             });
                             
-                            fetch.on('message', function (msg) {
-                                let msgUid;
+                            fetch.on('message', function (msg, seqno) {
+                                //let msgUid;
 
-                                msg.on('attributes', function (attrs) {
+                                /*msg.on('attributes', function (attrs) {
                                     msgUid = attrs.uid;
-                                });
+                                });*/
 
                                 msg.on('body', function (stream) {
                                     simpleParser(stream, async (err, parsed) => {
                                         if (err) {
                                             
-                                            moveToErrorBox(imap, msgUid);
+                                            moveToErrorBox(imap, seqno);
 
                                             console.error('Error parseando mensaje:', err.message);
                                             return;
@@ -68,33 +68,31 @@ function prepareBox(account){
                                         if (parsed.attachments && parsed.attachments.length > 0) {
                                             const inserted = [];
                                             let errored = false;
-                                            parsed.attachments.forEach( (x) => {
-                                                if(x.contentType === 'application/pdf') {
-                                                    console.log('Adjunto PDF encontrado:', x.filename);
 
-                                                    const invoice = processAttachment(x, parsed.from.value[0].address, account.user).catch(err => {
-                                                        console.error('Error procesando adjunto:', err.message);
-                                                        errored = true;
-                                                    });
+                                            const pdfs = parsed.attachments.filter(x => x.contentType === 'application/pdf');
+                                            
+                                            for(const pdf of pdfs){
+                                                const invoice = await processAttachment(pdf, parsed.from.value[0].address, account.user)
+                                                                    .catch(err => {
+                                                                            console.error('Error procesando adjunto:', err.message);
+                                                                            errored = true;
+                                                                        });
 
-                                                    inserted.push(invoice);
+                                                if(invoice && invoice.Id){
+                                                    inserted.push(invoice);   
                                                 }
-                                                
-                                            });
-
+                                            }
                                             if(errored){
                                                 for(const insertedInvoice of inserted){
-                                                    
                                                     deleteInvoice(insertedInvoice);
-                                                    
                                                 }
-                                                moveToErrorBox(imap, msgUid);
-                                                console.log('Algún adjunto ha fallado, se ha desmarcado el correo como no leído para reintentar más tarde');
-                                                
+
+                                                moveToErrorBox(imap, seqno);
                                             }else{
-                                                markSeen(imap, msgUid);
+                                                markSeen(imap, seqno);
+
                                                 for(const insertedInvoice of inserted){
-                                                    //await sendInvoiceAI(insertedInvoice);
+                                                    await sendInvoiceAI(insertedInvoice);
                                                 }
                                             }
                                         }

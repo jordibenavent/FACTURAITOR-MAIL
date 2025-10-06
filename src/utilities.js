@@ -34,7 +34,6 @@ async function processAttachment (attachment, from, mailBox) {
     let IdDoc = 0;
     let docPath = '';
     try{
-        throw new Error('Forzando error para probar el manejo de errores');
         const filename = attachment.filename;
         if (filename) {
             IdDoc = await putInvoiceData(from, mailBox);
@@ -55,21 +54,23 @@ async function processAttachment (attachment, from, mailBox) {
             return { Id: IdDoc, binary: docBinary, Path: idDocPath};
         }
     }catch(error){
-        console.error('Error procesando adjunto:', attachment.filename);
-        console.error('Error:', error.message);
         if(IdDoc != 0){
             deleteInvoice({ Id: IdDoc, Path: docPath });
-        }else{
-            throw error;
         }
+        throw error;
     }
 }
 
-async function moveToErrorBox(imap, uid) {
+async function moveToErrorBox(imap, seqno) {
     try {
-        if (uid) {
-            imap.move(uid, 'REVISAR', (err) => {
-                if (err) console.log('Error marcando como flagged:', err.message);
+        if (seqno) {
+            console.log('Moviendo correo a la carpeta REVISAR');
+            imap.seq.move(seqno, 'REVISAR', (err) => {
+                if (err){ 
+                    console.log('Error marcando como flagged:', err.message);
+                }else{
+                    console.log('Correo movido a la carpeta REVISAR');
+                }
             });
         }
     } catch (error) {
@@ -77,11 +78,15 @@ async function moveToErrorBox(imap, uid) {
     }
 }
 
-async function markSeen(imap, uid) {
+async function markSeen(imap, seqno) {
     try {
-        if (uid) {
-            imap.addFlags(uid, ['\\Seen'], (err) => {
-                if (err) console.log('Error marcando como no leído:', err.message);
+        if (seqno) {
+            imap.seq.addFlags(seqno, ['\\Seen'], (err) => {
+                if (err) {
+                    console.log('Error marcando como no leído:', err.message);
+                } else {
+                    console.log('Correo marcado como leído');
+                }
             });
         }
     } catch (error) {
