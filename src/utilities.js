@@ -1,9 +1,13 @@
-import fs from 'fs/promises';
+import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import { mkdir, readFile, writeFile } from 'fs/promises';
-import { deleteInvoiceData, getInvoiceData, putInvoicePath, putInvoiceData } from './db.js';
+import { deleteInvoiceData, getInvoiceData, putInvoicePath, postInvoiceData, postJobData, getJobs, putJobData } from './db.js';
 import axios from 'axios';
+import FormData from "form-data";
 import { fileURLToPath } from 'url';
 import path from 'path';
+import qs from 'qs';
+import 'dotenv/config';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,13 +24,12 @@ async function fileToBase64(path) {
 async function deleteInvoice(invoice) {
     try {
         deleteInvoiceData(invoice.Id);
-        if (invoice.Path != '') {
-            await fs.rm(invoice.Path, { recursive: true, force: true });
+        if (invoice.Ruta != '') {
+            await fsp.rm(invoice.Ruta, { recursive: true, force: true });
         }
     } catch (error) {
         console.log(error);
     }
-
 }
 
 
@@ -36,7 +39,7 @@ async function processAttachment (attachment, from, mailBox) {
     try{
         const filename = attachment.filename;
         if (filename) {
-            IdDoc = await putInvoiceData(from, mailBox);
+            IdDoc = await postInvoiceData(from, mailBox);
 
             if(IdDoc == 0){
                 throw new Error('No se pudo insertar el registro de la factura en la base de datos');
@@ -51,11 +54,11 @@ async function processAttachment (attachment, from, mailBox) {
 
             const docBinary = await fileToBase64(idDocPath);
 
-            return { Id: IdDoc, binary: docBinary, Path: idDocPath};
+            return { Id: IdDoc, binary: docBinary, Ruta: idDocPath};
         }
     }catch(error){
         if(IdDoc != 0){
-            deleteInvoice({ Id: IdDoc, Path: docPath });
+            deleteInvoice({ Id: IdDoc, Ruta: docPath });
         }
         throw error;
     }
@@ -96,23 +99,88 @@ async function markSeen(imap, seqno) {
 
 async function sendInvoiceAI(invoice){
     try {
+        let IdEmpotencyKey = `${Date.now()}-${invoice.Id}`;
+
         let data = new FormData();
-        data.append('', fs.createReadStream(tempPath));
+        data.append('id', `${invoice.Id}`);
+        data.append('file', fs.createReadStream(invoice.Ruta));
+        data.append('webhook_url', `${process.env.WEBHOOK_URL}` || '');
+        data.append('webhook_secret', '');
+        data.append('metadata', '');
 
         let config = {
-            method: 'post',
-            maxBodyLength: Infinity,
-            url: process.env.API + process.env.API_ENDPOINT,
-            headers: { 
-                'content-type': 'application/pdf',
-                ...data.getHeaders()
-                },
-            data : data
+        validateStatus: (status) => true,
+        method: 'post',
+        maxBodyLength: Infinity,
+        url: `${process.env.AIHOST}/v1/invoices`,
+        headers: { 
+            'Idempotency-Key': `${IdEmpotencyKey}`, 
+            'Content-Type': 'application/x-www-form-urlencoded', 
+            'Accept': 'application/json'
+        },
+        data : data
         };
 
         const response = await axios.request(config);
 
-        return response.data;
+        if(response.status == 422){
+                return false;
+        }
+
+        const result = postJobData(response.data.job_id, IdEmpotencyKey, response.data.status, invoice.Id)
+        
+        //actualizar aqui el claveid en la tabla DocCabeceras
+
+        if(!result){
+            return false;
+        }else{
+            return true;
+        }
+    } catch (error) {
+        console.log('Error enviando la factura a AI:');
+        console.log(error)
+    }
+}
+
+
+async function getJobStatus(jobId){
+    try {
+        
+        const response = await axios.get(`${process.env.AIHOST}/v1/jobs/${jobId}`);
+
+        return { jobId: response.data.job_id, status: response.data.status, result_url: response.data.result_url };
+    } catch (error) {
+        console.log('Error enviando la factura a AI:');
+        console.log(error)
+    }
+}
+
+async function getJobResult(resultUrl){
+    try {
+        
+        const response = await axios.get(`${process.env.AIHOST}${resultUrl}`);
+
+        const jsonString = JSON.stringify(response.data);
+
+        return jsonString;
+    } catch (error) {
+        console.log('Error enviando la factura a AI:');
+        console.log(error)
+    }
+}
+
+async function updateJobResult(){
+    try {
+        const result = await getJobs();
+
+        for(const job of result.recordset){
+            const response = await getJobStatus(job.JobId);
+        
+            if(response.status == 'SUCCEEDED'){
+                const json = await getJobResult(response.result_url);
+                await putJobData(job.JobId, json, response.status);
+            }
+        }
     } catch (error) {
         console.log(error)
     }
@@ -145,5 +213,8 @@ export {
     moveToErrorBox, 
     sendInvoiceAI,
     createErrorMailBox, 
-    markSeen 
+    markSeen,
+    getJobStatus,
+    getJobResult,
+    updateJobResult
 };

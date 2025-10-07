@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import sql from 'mssql';
 const connect = sql.connect;
-import fs from 'fs';
+import fs, { stat } from 'fs';
 import { fileToBase64 } from './utilities.js';
 
 const config = {
@@ -54,7 +54,7 @@ async function putInvoicePath(IdDoc, path){
     }
 }
 
-async function putInvoiceData(from, mailBox){
+async function postInvoiceData(from, mailBox){
     try {
         const pool = await getConnection();
         const result = await pool
@@ -109,4 +109,94 @@ async function deleteInvoiceData(IdDoc){
 
 }
 
-export { sql, getAccounts ,getConnection, putInvoiceData, getInvoiceData, putInvoicePath, deleteInvoiceData };
+async function getJobs(){
+    try {
+        const pool = await getConnection();
+        const result = await pool
+        .request()
+        .query("select * from DocAI where Estado = 1");
+        
+        return result;
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+async function postJobData(JobId, IdEmpotencyKey, Status, IdDoc){
+    try {
+        if(!JobId || !Status || !IdDoc){
+            throw new Error('JobId y Status es obligatorio');
+        }
+
+        switch(Status){
+            case 'PENDING':
+                Status = 1
+                break;
+            case 'SUCCEEDED':
+                Status = 2
+                break;
+        }
+
+        const pool = await getConnection();
+        const result = await pool
+        .request()
+        .input('JobId', sql.VarChar(sql.MAX), JobId)
+        .input('ClaveId', sql.VarChar(250), IdEmpotencyKey)
+        .input('Estado', sql.Int, Status)
+        .input('DocId', sql.Int, IdDoc)
+        .query(`INSERT INTO DocAI (Id, JobId, DocId, ClaveId, Estado) values (@DocId, @JobId, @DocId, @ClaveId, @Estado)`);
+
+        return result;
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+async function putJobData(JobId, JSON, Status){
+    try {
+        if(!JobId || !Status){
+            throw new Error('JobId y Status es obligatorio');
+        }
+        if(!JSON){
+            JSON = '';
+        }
+
+        switch(Status){
+            case 'PENDING':
+                Status = 1
+                break;
+            case 'SUCCEEDED':
+                Status = 2
+                break;
+        }
+
+        if(Status != 1 && Status != 2){
+            throw new Error('Status no válido');
+        }
+
+        const pool = await getConnection();
+        const result = await pool
+        .request()
+        .input('JobId', sql.VarChar(sql.MAX), JobId)
+        .input('DocJson', sql.VarChar(sql.MAX), JSON)
+        .input('Estado', sql.Int, Status)
+        .query(`UPDATE DocAI Set Estado = @Estado, DocJson = @DocJson where JobId = @JobId and Estado = 1`);
+
+        return result;
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+export { 
+    sql, 
+    getAccounts,
+    getConnection, 
+    postInvoiceData, 
+    getInvoiceData, 
+    putInvoicePath, 
+    deleteInvoiceData, 
+    postJobData, 
+    putJobData,
+    getJobs
+};

@@ -3,7 +3,7 @@ import Imap from 'imap';
 import { simpleParser } from 'mailparser';
 import fs from 'fs';
 import path from 'path';
-import { sql, getConnection, getAccounts, putInvoiceData, putInvoicePath, deleteInvoiceData } from './db.js';
+import { getAccounts, postJobData } from './db.js';
 import { startApi } from './api/api.js';
 import { deleteInvoice, __dirname, __filename, processAttachment, sendInvoiceAI, createErrorMailBox, markSeen, moveToErrorBox } from './utilities.js';
 
@@ -83,17 +83,19 @@ function prepareBox(account){
                                                 }
                                             }
                                             if(errored){
-                                                for(const insertedInvoice of inserted){
-                                                    deleteInvoice(insertedInvoice);
-                                                }
+                                                removeInsertedInvoices(inserted);
 
                                                 moveToErrorBox(imap, seqno);
                                             }else{
-                                                markSeen(imap, seqno);
-
+                                                let result = []
                                                 for(const insertedInvoice of inserted){
-                                                    await sendInvoiceAI(insertedInvoice);
+                                                    result.push(await sendInvoiceAI(insertedInvoice))
                                                 }
+
+                                                /*if(result.filter(x => x == false).length > 0){
+                                                    removeInsertedInvoices(inserted);
+                                                }*/
+                                                markSeen(imap, seqno);
                                             }
                                         }
                                     });
@@ -124,6 +126,15 @@ function prepareBox(account){
     imap.connect();
 }
 
+function removeInsertedInvoices(inserted){
+    try {
+        for(const insertedInvoice of inserted){
+            deleteInvoice(insertedInvoice);
+        }
+    } catch (error) {
+        console.log(error);
+    }
+}
 
 async function startMailboxes() {
     try { 
