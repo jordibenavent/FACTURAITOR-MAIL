@@ -115,7 +115,7 @@ function prepareBox(account){
     });
 
     imap.once('error', function (err) {
-        console.error('Error en IMAP:', err.message);
+        console.error('Error en IMAP:', err);
     });
 
     imap.once('end', function () {
@@ -138,6 +138,7 @@ function removeInsertedInvoices(inserted){
 
 async function startMailboxes() {
     try { 
+        /*
         const dbAccounts = await getAccounts();
         const accounts = dbAccounts.recordset;
         
@@ -152,19 +153,19 @@ async function startMailboxes() {
         
         for(const account of accounts) {
             console.log(`Conectando a ${account.Email}...`);
-
+            
             const imapAccount = {
                 user: account.Email,
-                password: account.password,
-                host: account.host,
-                port: account.port,
-                tls: account.tls
+                password: account.Password,
+                host: account.Host,
+                port: account.Port,
+                tls: account.TLS,
+                tlsOptions: { rejectUnauthorized: false }
             }
-
             prepareBox(imapAccount);
 
             console.log('Conectado a ' + account.Email);
-        }
+        }*/
     } catch (error) {
         console.log('Error obteniendo cuentas de la base de datos:', error.message);    
     }

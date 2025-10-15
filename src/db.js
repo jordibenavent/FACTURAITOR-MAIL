@@ -31,7 +31,7 @@ async function getAccounts(){
         const pool = await getConnection();
         const result = await pool
         .request()
-        .query("select * from vPers_Buzones");
+        .query("select * from Cuentas");
 
         return result;
     } catch (error) {
@@ -39,14 +39,14 @@ async function getAccounts(){
     }
 }
 
-async function putInvoicePath(IdDoc, path){
+async function putInvoicePath(DocId, path){
     try {
         const pool = await getConnection();
         const result = await pool
         .request()
-        .input('IdDoc', sql.Int, IdDoc)
+        .input('DocId', sql.Int, DocId)
         .input('Ruta', sql.VarChar(500), path)
-        .query('update DocCabeceras set Ruta = @Ruta where IdDoc = @IdDoc');
+        .query('update DocCabeceras set Ruta = @Ruta where DocId = @DocId');
 
         return result;
     } catch (error) {
@@ -70,13 +70,13 @@ async function postInvoiceData(from, mailBox){
     }
 }
 
-async function getInvoiceData(IdDoc){
+async function getInvoiceData(DocId){
     try {
         const pool = await getConnection();
         const result = await pool
         .request()
-        .input('IdDoc', sql.Int, IdDoc)
-        .query('select IdDoc, Ruta from DocCabeceras where IdDoc = @IdDoc');
+        .input('DocId', sql.Int, DocId)
+        .query('select DocId, Ruta from DocCabeceras where DocId = @DocId');
 
         const invoice = result.recordset[0];
         invoice.Ruta = invoice.Ruta.trim();
@@ -88,7 +88,7 @@ async function getInvoiceData(IdDoc){
         }
 
         return {
-            IdDoc: invoice.IdDoc,
+            DocId: invoice.DocId,
             binary: file
         };
     } catch (error) {
@@ -96,13 +96,13 @@ async function getInvoiceData(IdDoc){
     }
 }
 
-async function deleteInvoiceData(IdDoc){
+async function deleteInvoiceData(DocId){
     try {
         const pool = await getConnection();
         const result = await pool
         .request()
-        .input('IdDoc', sql.Int, IdDoc)
-        .query('delete from DocCabeceras where IdDoc = @IdDoc');
+        .input('DocId', sql.Int, DocId)
+        .query('delete from DocCabeceras where DocId = @DocId');
     } catch (error) {
         console.log(error);
     }
@@ -122,10 +122,10 @@ async function getJobs(){
     }
 }
 
-async function postJobData(JobId, IdEmpotencyKey, Status, IdDoc){
+async function postJobData(JobId, IdEmpotencyKey, Status, DocId){
     try {
-        if(!JobId || !Status || !IdDoc){
-            throw new Error('JobId y Status es obligatorio');
+        if(!JobId || !Status || !DocId){
+            throw new Error('JobId, Status y DocId es obligatorio');
         }
 
         switch(Status){
@@ -143,7 +143,7 @@ async function postJobData(JobId, IdEmpotencyKey, Status, IdDoc){
         .input('JobId', sql.VarChar(sql.MAX), JobId)
         .input('ClaveId', sql.VarChar(250), IdEmpotencyKey)
         .input('Estado', sql.Int, Status)
-        .input('DocId', sql.Int, IdDoc)
+        .input('DocId', sql.Int, DocId)
         .query(`INSERT INTO DocAI (Id, JobId, DocId, ClaveId, Estado) values (@DocId, @JobId, @DocId, @ClaveId, @Estado)`);
 
         return result;

@@ -18,6 +18,9 @@
     "imap": "^0.8.17",
     "mailparser": "^3.7.4",
     "mssql": "^12.0.0",
-    "path": "^0.12.7"
+    "path": "^0.12.7",
+    "redoc-express": "^2.1.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1"
   }
 }

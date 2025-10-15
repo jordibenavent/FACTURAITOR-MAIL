@@ -24,11 +24,11 @@ router.get('/job-status', async (req, res) => {
     }
 })
 
-router.get('/resend-invoice/:IdDoc', async (req, res) => {
+router.get('/resend-invoice/:DocId', async (req, res) => {
     try {
-        const { IdDoc } = req.params;
+        const { DocId } = req.params;
 
-        const invoiceData = await getInvoiceData(IdDoc);
+        const invoiceData = await getInvoiceData(DocId);
         
         if(!invoiceData){
             return res.status(404).json({ error: 'Factura no encontrada' });
@@ -51,13 +51,14 @@ router.get('/resend-invoice/:IdDoc', async (req, res) => {
 
 router.post('/job-reply', async (req, res) => {
     try {
-        const { JobId, Json, Status } = req.body;
+        console.log('Nueva entrada en /job-reply');
+        const { job_id, invoice_data, status } = req.body;
 
-        if(!JobId || !Json){
-            return res.status(400).json({ error: 'Se deben proporcionar ambos campos: JobId, Json' });
+        if(!job_id || !invoice_data || !status){
+            return res.status(400).json({ error: 'Se deben proporcionar los campos: job_id, invoice_data y status' });
         }
-        
-        const result = await putJobData(JobId, Json, Status);
+
+        const result = await putJobData(job_id, JSON.stringify(invoice_data), status);
 
         res.status(200).json({ resultado: result });
     } catch (err) {
