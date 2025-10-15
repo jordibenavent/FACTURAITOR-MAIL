@@ -34,31 +34,31 @@ async function deleteInvoice(invoice) {
 
 
 async function processAttachment (attachment, from, mailBox) {
-    let IdDoc = 0;
+    let DocId = 0;
     let docPath = '';
     try{
         const filename = attachment.filename;
         if (filename) {
-            IdDoc = await postInvoiceData(from, mailBox);
+            DocId = await postInvoiceData(from, mailBox);
 
-            if(IdDoc == 0){
+            if(DocId == 0){
                 throw new Error('No se pudo insertar el registro de la factura en la base de datos');
             }
 
-            docPath = path.join(__dirname, 'temp', IdDoc.toString());
+            docPath = path.join(__dirname, 'temp', DocId.toString());
             await mkdir(docPath, { recursive: true });
-            const idDocPath = path.join(docPath, `${IdDoc}.pdf`);
+            const idDocPath = path.join(docPath, `${DocId}.pdf`);
             await writeFile(idDocPath, attachment.content);
 
-            await putInvoicePath(IdDoc, idDocPath);
+            await putInvoicePath(DocId, idDocPath);
 
             const docBinary = await fileToBase64(idDocPath);
 
-            return { Id: IdDoc, binary: docBinary, Ruta: idDocPath};
+            return { Id: DocId, binary: docBinary, Ruta: idDocPath};
         }
     }catch(error){
-        if(IdDoc != 0){
-            deleteInvoice({ Id: IdDoc, Ruta: docPath });
+        if(DocId != 0){
+            deleteInvoice({ Id: DocId, Ruta: docPath });
         }
         throw error;
     }
