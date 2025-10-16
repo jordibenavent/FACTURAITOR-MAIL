@@ -6,6 +6,7 @@ import path from 'path';
 import { getAccounts, postJobData } from './db.js';
 import { startApi } from './api/api.js';
 import { deleteInvoice, __dirname, __filename, processAttachment, sendInvoiceAI, createErrorMailBox, markSeen, moveToErrorBox } from './utilities.js';
+import './logger-setup.js';
 
 const activeConnections = [];
 
@@ -92,9 +93,11 @@ function prepareBox(account){
                                                     result.push(await sendInvoiceAI(insertedInvoice))
                                                 }
 
-                                                /*if(result.filter(x => x == false).length > 0){
+                                                if(result.filter(x => x == false).length > 0){
                                                     removeInsertedInvoices(inserted);
-                                                }*/
+                                                    moveToErrorBox(imap, seqno);
+                                                    console.log('Error enviando factura a Facturaitor o actualizando la base de datos');
+                                                }
                                                 markSeen(imap, seqno);
                                             }
                                         }
@@ -138,7 +141,7 @@ function removeInsertedInvoices(inserted){
 
 async function startMailboxes() {
     try { 
-        /*
+        
         const dbAccounts = await getAccounts();
         const accounts = dbAccounts.recordset;
         
@@ -165,7 +168,7 @@ async function startMailboxes() {
             prepareBox(imapAccount);
 
             console.log('Conectado a ' + account.Email);
-        }*/
+        }
     } catch (error) {
         console.log('Error obteniendo cuentas de la base de datos:', error.message);    
     }

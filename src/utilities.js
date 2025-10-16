@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { mkdir, readFile, writeFile } from 'fs/promises';
-import { deleteInvoiceData, getInvoiceData, putInvoicePath, postInvoiceData, postJobData, getJobs, putJobData } from './db.js';
+import { deleteInvoiceData, getInvoiceData, putInvoicePath, postInvoiceData, postJobData, getJobs, putJobData, putInvoiceClaveId } from './db.js';
 import axios from 'axios';
 import FormData from "form-data";
 import { fileURLToPath } from 'url';
@@ -45,7 +45,12 @@ async function processAttachment (attachment, from, mailBox) {
                 throw new Error('No se pudo insertar el registro de la factura en la base de datos');
             }
 
-            docPath = path.join(__dirname, 'temp', DocId.toString());
+            if(process.env.DEBUG){
+                docPath = path.join(__dirname, 'temp', DocId.toString());
+            }else{
+                docPath = path.join(process.env.DOC_PATH, DocId.toString());
+            }
+            
             await mkdir(docPath, { recursive: true });
             const idDocPath = path.join(docPath, `${DocId}.pdf`);
             await writeFile(idDocPath, attachment.content);
@@ -97,7 +102,7 @@ async function markSeen(imap, seqno) {
     }
 }
 
-async function sendInvoiceAI(invoice){
+async function sendInvoiceAI(invoice, isRescan = false){
     try {
         let IdEmpotencyKey = `${Date.now()}-${invoice.Id}`;
 
@@ -106,7 +111,13 @@ async function sendInvoiceAI(invoice){
         data.append('file', fs.createReadStream(invoice.Ruta));
         data.append('webhook_url', `${process.env.WEBHOOK_URL}` || '');
         data.append('webhook_secret', '');
-        data.append('metadata', '');
+        data.append('metadata', JSON.stringify({
+            "customer": { "name": "" },
+            "supplier": { "name": "acierta" },
+            "handlesProjects": true,
+            "type": "creditor",
+            "rescan": isRescan
+        }));
 
         let config = {
         validateStatus: (status) => true,
@@ -120,6 +131,11 @@ async function sendInvoiceAI(invoice){
         },
         data : data
         };
+        
+        /*
+        
+        {"customer": {"name": ""},"supplier": {"name": "acierta"},"handlesProjects": true,"type": "creditor","rescan": false}
+        */
 
         const response = await axios.request(config);
 
@@ -127,15 +143,20 @@ async function sendInvoiceAI(invoice){
                 return false;
         }
 
-        const result = postJobData(response.data.job_id, IdEmpotencyKey, response.data.status, invoice.Id)
-        
-        //actualizar aqui el claveid en la tabla DocCabeceras
+        const result = await postJobData(response.data.job_id, IdEmpotencyKey, response.data.status, invoice.Id)
+        const resultClaveId = await putInvoiceClaveId(invoice.Id, IdEmpotencyKey);
 
         if(!result){
+            console.log('No se pudo insertar el jobid en la base de datos');
             return false;
-        }else{
-            return true;
         }
+
+        if(!resultClaveId){
+            console.log('No se pudo actualizar la claveid en la base de datos');
+            return false;
+        }
+            
+        return true;
     } catch (error) {
         console.log('Error enviando la factura a AI:');
         console.log(error)

@@ -70,6 +70,20 @@ async function postInvoiceData(from, mailBox){
     }
 }
 
+async function putInvoiceClaveId(DocId, ClaveId){
+    try {
+        const pool = await getConnection();
+        const result = await pool
+        .request()
+        .input('DocId', sql.Int, DocId)
+        .input('ClaveId', sql.VarChar(250), ClaveId)
+        .query('update DocCabeceras set ClaveId = @ClaveId where DocId = @DocId');
+        return result;
+    } catch (error) {
+        console.log(error);
+    }
+}
+
 async function getInvoiceData(DocId){
     try {
         const pool = await getConnection();
@@ -198,5 +212,6 @@ export {
     deleteInvoiceData, 
     postJobData, 
     putJobData,
-    getJobs
+    getJobs,
+    putInvoiceClaveId
 };

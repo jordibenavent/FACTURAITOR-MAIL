@@ -40,8 +40,9 @@ router.get('/resend-invoice/:DocId', async (req, res) => {
         const Json = response.Data.Json;
         const Status = response.Data.Status;
         const IdEmpotencyKey = response.IdEmpotencyKey;
+        
 
-        const result = await postJobData(JobId, Json, IdEmpotencyKey, Status, IdDoc);
+        const result = await postJobData(JobId, Json, IdEmpotencyKey, Status, DocId);
 
         return res.status(200).json({ msg: 'Factura reenviada correctamente' });
     } catch (err) {
