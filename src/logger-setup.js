@@ -1,7 +1,19 @@
 
 import pino from "pino";
+import fs from "fs";
+import path from "path";
+import { __dirname }   from './utilities.js';
+
 
 const isDev = process.env.NODE_ENV !== "production";
+const logsDir = path.join(__dirname, "logs");
+
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
+
+const fileStream = pino.destination(path.join(logsDir, "app.log"));
+
 
 const transport = isDev
   ? pino.transport({
@@ -19,7 +31,9 @@ const logger = pino(
     level: process.env.LOG_LEVEL || "info",
     base: { service: "facturaitor-mail" },
   },
-  transport
+  isDev
+    ? pino.multistream([{ stream: transport }, { stream: fileStream }])
+    : fileStream
 );
 
 // Sobrescribe los console

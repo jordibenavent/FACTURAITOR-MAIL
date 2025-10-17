@@ -3,7 +3,7 @@ import Imap from 'imap';
 import { simpleParser } from 'mailparser';
 import fs from 'fs';
 import path from 'path';
-import { getAccounts, postJobData } from './db.js';
+import { getAccounts, postJobData, getInvoiceData } from './db.js';
 import { startApi } from './api/api.js';
 import { deleteInvoice, __dirname, __filename, processAttachment, sendInvoiceAI, createErrorMailBox, markSeen, moveToErrorBox } from './utilities.js';
 import './logger-setup.js';
@@ -83,14 +83,22 @@ function prepareBox(account){
                                                     inserted.push(invoice);   
                                                 }
                                             }
+
                                             if(errored){
                                                 removeInsertedInvoices(inserted);
-
                                                 moveToErrorBox(imap, seqno);
                                             }else{
                                                 let result = []
+                                                
                                                 for(const insertedInvoice of inserted){
-                                                    result.push(await sendInvoiceAI(insertedInvoice))
+                                                    const data = await getInvoiceData(insertedInvoice.Id);
+
+                                                    if(!data){
+                                                        result.push(false);
+                                                    }else{
+                                                        result.push(await sendInvoiceAI(data))
+                                                    }
+                                                    
                                                 }
 
                                                 if(result.filter(x => x == false).length > 0){
@@ -98,6 +106,7 @@ function prepareBox(account){
                                                     moveToErrorBox(imap, seqno);
                                                     console.log('Error enviando factura a Facturaitor o actualizando la base de datos');
                                                 }
+
                                                 markSeen(imap, seqno);
                                             }
                                         }

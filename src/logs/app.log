@@ -1,0 +1,5 @@
+{"level":30,"time":1760621932873,"service":"facturaitor-mail","msg":"🚀 API escuchando en http://localhost:5000"}
+{"level":30,"time":1760621932938,"service":"facturaitor-mail","msg":"Conectando a jordi.benavent@stratic.es..."}
+{"level":30,"time":1760621932972,"service":"facturaitor-mail","msg":"Conectado a jordi.benavent@stratic.es"}
+{"level":30,"time":1760621932972,"service":"facturaitor-mail","msg":"Conectando a straticpdftest@gmail.com..."}
+{"level":30,"time":1760621932973,"service":"facturaitor-mail","msg":"Conectado a straticpdftest@gmail.com"}

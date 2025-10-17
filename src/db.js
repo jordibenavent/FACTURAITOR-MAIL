@@ -90,10 +90,18 @@ async function getInvoiceData(DocId){
         const result = await pool
         .request()
         .input('DocId', sql.Int, DocId)
-        .query('select DocId, Ruta from DocCabeceras where DocId = @DocId');
+        .query('select DocId, Ruta, ProveedorEmail, EmailBox from DocCabeceras where DocId = @DocId');
 
         const invoice = result.recordset[0];
         invoice.Ruta = invoice.Ruta.trim();
+
+        const customer = await pool.request()
+        .input('Email', sql.VarChar(150), invoice.EmailBox)
+        .query('select EmpNombre, ProyectoGestion from Empresas where EmpEmail = @Email');
+
+        const proveedor = await pool.request()
+        .input('ProveedorEmail', sql.VarChar(150), invoice.ProveedorEmail)
+        .query('select Proveedor from ProvDatos where ProvEmail = @ProveedorEmail');
 
         const file = await fileToBase64(invoice.Ruta);
 
@@ -102,8 +110,12 @@ async function getInvoiceData(DocId){
         }
 
         return {
-            DocId: invoice.DocId,
-            binary: file
+            Id: invoice.DocId,
+            Ruta: invoice.Ruta,
+            CustomerName: customer.recordset.length > 0 ? customer.recordset[0].EmpNombre.trim() : '',
+            SupplierName: proveedor.recordset.length > 0 ? proveedor.recordset[0].Nombre.trim() : '',
+            handlesProjects: customer.recordset.length > 0 ? customer.recordset[0].ProyectoGestion : false,
+            type: 'creditor'
         };
     } catch (error) {
         console.log(error);

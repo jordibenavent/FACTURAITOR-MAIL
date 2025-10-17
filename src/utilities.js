@@ -41,7 +41,7 @@ async function processAttachment (attachment, from, mailBox) {
         if (filename) {
             DocId = await postInvoiceData(from, mailBox);
 
-            if(DocId == 0){
+            if(!DocId){
                 throw new Error('No se pudo insertar el registro de la factura en la base de datos');
             }
 
@@ -52,10 +52,14 @@ async function processAttachment (attachment, from, mailBox) {
             }
             
             await mkdir(docPath, { recursive: true });
-            const idDocPath = path.join(docPath, `${DocId}.pdf`);
+            const idDocPath = path.join(docPath, `DocOrigen.pdf`);
             await writeFile(idDocPath, attachment.content);
 
-            await putInvoicePath(DocId, idDocPath);
+            const pathResult = await putInvoicePath(DocId, idDocPath);
+
+            if(!pathResult){
+                throw new Error('No se pudo actualizar la ruta de la factura en la base de datos');
+            }
 
             const docBinary = await fileToBase64(idDocPath);
 
@@ -91,7 +95,7 @@ async function markSeen(imap, seqno) {
         if (seqno) {
             imap.seq.addFlags(seqno, ['\\Seen'], (err) => {
                 if (err) {
-                    console.log('Error marcando como no leído:', err.message);
+                    console.log('Error marcando como leído:', err.message);
                 } else {
                     console.log('Correo marcado como leído');
                 }
@@ -109,13 +113,13 @@ async function sendInvoiceAI(invoice, isRescan = false){
         let data = new FormData();
         data.append('id', `${invoice.Id}`);
         data.append('file', fs.createReadStream(invoice.Ruta));
-        data.append('webhook_url', `${process.env.WEBHOOK_URL}` || '');
+        data.append('webhook_url', `${process.env.WEBHOOK_URL}` ?? '');
         data.append('webhook_secret', '');
         data.append('metadata', JSON.stringify({
-            "customer": { "name": "" },
-            "supplier": { "name": "acierta" },
-            "handlesProjects": true,
-            "type": "creditor",
+            "customer": { "name": invoice.customerName ?? "" },
+            "supplier": { "name": invoice.supplierName ?? "" },
+            "handlesProjects": invoice.handlesProjects ?? false,
+            "type": invoice.type ?? "creditor",
             "rescan": isRescan
         }));
 
@@ -132,10 +136,6 @@ async function sendInvoiceAI(invoice, isRescan = false){
         data : data
         };
         
-        /*
-        
-        {"customer": {"name": ""},"supplier": {"name": "acierta"},"handlesProjects": true,"type": "creditor","rescan": false}
-        */
 
         const response = await axios.request(config);
 

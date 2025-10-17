@@ -34,7 +34,7 @@ router.get('/resend-invoice/:DocId', async (req, res) => {
             return res.status(404).json({ error: 'Factura no encontrada' });
         }
         
-        const response = await sendInvoiceAI(invoiceData);
+        const response = await sendInvoiceAI(invoiceData, true);
 
         const JobId = response.Data.JobId;
         const Json = response.Data.Json;
