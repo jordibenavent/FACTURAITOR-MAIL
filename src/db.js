@@ -88,7 +88,7 @@ async function getInvoiceData(DocId){
     try {
         let supplier = '';
         let client = '';
-        let invoiceType = 'supplier';
+        let invoiceType = 'creditor';
 
         const pool = await getConnection();
         const result = await pool
