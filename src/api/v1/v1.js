@@ -53,6 +53,7 @@ router.get('/resend-invoice/:DocId', async (req, res) => {
 router.post('/job-reply', async (req, res) => {
     try {
         console.log('Nueva entrada en /job-reply');
+        console.log(req.headers)
         const { job_id, invoice_data, status } = req.body;
 
         if(!job_id || !invoice_data || !status){

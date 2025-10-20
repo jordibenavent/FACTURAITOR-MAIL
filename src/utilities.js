@@ -116,10 +116,10 @@ async function sendInvoiceAI(invoice, isRescan = false){
         data.append('webhook_url', `${process.env.WEBHOOK_URL}` ?? '');
         data.append('webhook_secret', '');
         data.append('metadata', JSON.stringify({
-            "customer": { "name": invoice.customerName ?? "" },
-            "supplier": { "name": invoice.supplierName ?? "" },
+            "customer": { "name": invoice.customerName ?? '' },
+            "supplier": { "name": invoice.supplierName ?? '' },
             "handlesProjects": invoice.handlesProjects ?? false,
-            "type": invoice.type ?? "creditor",
+            "type": invoice.type ?? 'creditor',
             "rescan": isRescan
         }));
 

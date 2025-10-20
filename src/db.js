@@ -86,6 +86,10 @@ async function putInvoiceClaveId(DocId, ClaveId){
 
 async function getInvoiceData(DocId){
     try {
+        let supplier = '';
+        let client = '';
+        let invoiceType = 'supplier';
+
         const pool = await getConnection();
         const result = await pool
         .request()
@@ -100,8 +104,8 @@ async function getInvoiceData(DocId){
         .query('select EmpNombre, ProyectoGestion from Empresas where EmpEmail = @Email');
 
         const proveedor = await pool.request()
-        .input('ProveedorEmail', sql.VarChar(150), invoice.ProveedorEmail)
-        .query('select Proveedor from ProvDatos where ProvEmail = @ProveedorEmail');
+        .input('E_mail', sql.VarChar(150), invoice.ProveedorEmail)
+        .query('select TOP 1 Proveedor, FacturasAcreedor from ProvDatos where E_Mail = @E_mail order by IdProveedor Desc');
 
         const file = await fileToBase64(invoice.Ruta);
 
@@ -109,13 +113,25 @@ async function getInvoiceData(DocId){
             throw new Error('No se pudo leer el archivo de la factura');
         }
 
+        if(proveedor.recordset.length > 0){
+            console.log(proveedor.recordset[0].FacturasAcreedor);
+            switch(proveedor.recordset[0].FacturasAcreedor){
+                case 1:
+                    invoiceType =  'creditor';
+                    break;
+                case 0:
+                    invoiceType = 'supplier';
+                    break;
+            }
+        }
+
         return {
             Id: invoice.DocId,
             Ruta: invoice.Ruta,
             CustomerName: customer.recordset.length > 0 ? customer.recordset[0].EmpNombre.trim() : '',
-            SupplierName: proveedor.recordset.length > 0 ? proveedor.recordset[0].Nombre.trim() : '',
+            SupplierName: proveedor.recordset.length > 0 ? proveedor.recordset[0].Proveedor.trim() : '',
             handlesProjects: customer.recordset.length > 0 ? customer.recordset[0].ProyectoGestion : false,
-            type: 'creditor'
+            type: invoiceType
         };
     } catch (error) {
         console.log(error);
