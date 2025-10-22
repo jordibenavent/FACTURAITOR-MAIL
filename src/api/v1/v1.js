@@ -54,13 +54,13 @@ router.post('/job-reply', async (req, res) => {
     try {
         console.log('Nueva entrada en /job-reply');
         console.log(req.headers)
-        const { job_id, invoice_data, status } = req.body;
+        const { job_id, status } = req.body;
 
         if(!job_id || !invoice_data || !status){
             return res.status(400).json({ error: 'Se deben proporcionar los campos: job_id, invoice_data y status' });
         }
 
-        const result = await putJobData(job_id, JSON.stringify(invoice_data), status);
+        const result = await putJobData(job_id, JSON.stringify(req.body), status);
 
         res.status(200).json({ resultado: result });
     } catch (err) {
