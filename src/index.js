@@ -5,8 +5,11 @@ import fs from 'fs';
 import path from 'path';
 import { getAccounts, postJobData, getInvoiceData } from './db.js';
 import { startApi } from './api/api.js';
-import { deleteInvoice, __dirname, __filename, processAttachment, sendInvoiceAI, createErrorMailBox, markSeen, moveToErrorBox } from './utilities.js';
+import { deleteInvoice, __dirname, __filename, processAttachment, sendInvoiceAI, createErrorMailBox, markSeen, moveToErrorBox, fetchMails, startFetchInterval
+ } from './utilities.js';
 import './logger-setup.js';
+import { clearInterval } from 'timers';
+import { start } from 'repl';
 
 const activeConnections = [];
 
@@ -18,6 +21,8 @@ function prepareBox(account){
         console.log(`Reconectando a ${account.user} en 10 segundos...`);
         setTimeout(() => prepareBox(account), 10000);
     };
+
+    let fetchInterval = null;
 
     imap.once('ready', function () {
         try {
@@ -49,70 +54,7 @@ function prepareBox(account){
                                 markSeen: false
                             });
                             
-                            fetch.on('message', function (msg, seqno) {
-                                //let msgUid;
-
-                                /*msg.on('attributes', function (attrs) {
-                                    msgUid = attrs.uid;
-                                });*/
-
-                                msg.on('body', function (stream) {
-                                    simpleParser(stream, async (err, parsed) => {
-                                        if (err) {
-                                            
-                                            moveToErrorBox(imap, seqno);
-
-                                            console.error('Error parseando mensaje:', err.message);
-                                            return;
-                                        }
-
-                                        if (parsed.attachments && parsed.attachments.length > 0) {
-                                            const inserted = [];
-                                            let errored = false;
-
-                                            const pdfs = parsed.attachments.filter(x => x.contentType === 'application/pdf');
-                                            
-                                            for(const pdf of pdfs){
-                                                const invoice = await processAttachment(pdf, parsed.from.value[0].address, account.user)
-                                                                    .catch(err => {
-                                                                            console.error('Error procesando adjunto:', err.message);
-                                                                            errored = true;
-                                                                        });
-
-                                                if(invoice && invoice.Id){
-                                                    inserted.push(invoice);   
-                                                }
-                                            }
-
-                                            if(errored){
-                                                removeInsertedInvoices(inserted);
-                                                moveToErrorBox(imap, seqno);
-                                            }else{
-                                                let result = []
-                                                
-                                                for(const insertedInvoice of inserted){
-                                                    const data = await getInvoiceData(insertedInvoice.Id);
-
-                                                    if(!data){
-                                                        result.push(false);
-                                                    }else{
-                                                        result.push(await sendInvoiceAI(data))
-                                                    }
-                                                    
-                                                }
-
-                                                if(result.filter(x => x == false).length > 0){
-                                                    removeInsertedInvoices(inserted);
-                                                    moveToErrorBox(imap, seqno);
-                                                    console.log('Error enviando factura a Facturaitor o actualizando la base de datos');
-                                                }
-
-                                                markSeen(imap, seqno);
-                                            }
-                                        }
-                                    });
-                                });
-                            });
+                            fetchMails(fetch, imap, account);
 
                             fetch.on('error', function (err) {
                                 console.error('Error al buscar mensajes:', err.message);
@@ -120,33 +62,42 @@ function prepareBox(account){
                         })
                     });
                 });
+
+                fetchInterval = startFetchInterval(imap, account);
+
             });
         } catch (error) {
             console.error('Error en la bandeja de entrada inbox:', error.message);
         }
     });
 
+    imap.once('close', function (err) {
+        console.log('Conexión IMAP cerrada: ', err);
+        imap.end();
+    });
+
+    imap.on("alert", (error) => console.log("IMAP alert:", error));
+
     imap.once('error', function (err) {
         console.error('Error en IMAP:', err);
+        imap.end();
     });
 
     imap.once('end', function () {
         console.log('Conexión IMAP terminada');
+
+        if(fetchInterval){
+            clearInterval(fetchInterval);
+            fetchInterval = null;
+        }
+
         reconnect();
     });
     
     imap.connect();
 }
 
-function removeInsertedInvoices(inserted){
-    try {
-        for(const insertedInvoice of inserted){
-            deleteInvoice(insertedInvoice);
-        }
-    } catch (error) {
-        console.log(error);
-    }
-}
+
 
 async function startMailboxes() {
     try { 
@@ -172,8 +123,20 @@ async function startMailboxes() {
                 host: account.Host,
                 port: account.Port,
                 tls: account.TLS,
-                tlsOptions: { rejectUnauthorized: false }
+                tlsOptions: { rejectUnauthorized: false },
+                debug: (msg) => {
+                    if (
+                        msg.toLowerCase().includes("bad") ||
+                        msg.toLowerCase().includes("no ") || 
+                        msg.toLowerCase().includes("error") ||
+                        msg.toLowerCase().includes("fail") ||
+                        msg.toLowerCase().includes("disconnect")
+                    ) {
+                        console.log(`[IMAP DEBUG] ${msg.trim()}`);
+                    }
+                }
             }
+
             prepareBox(imapAccount);
 
             console.log('Conectado a ' + account.Email);
@@ -183,11 +146,15 @@ async function startMailboxes() {
     }
 }
 
+
+
 try {
     startMailboxes();
     startApi();
 } catch (error) {
     console.log('Error iniciando app:', error.message);
 }
+
+
 
 export { startMailboxes };

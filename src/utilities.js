@@ -5,6 +5,7 @@ import { deleteInvoiceData, getInvoiceData, putInvoicePath, postInvoiceData, pos
 import axios from 'axios';
 import FormData from "form-data";
 import { fileURLToPath } from 'url';
+import { simpleParser } from 'mailparser';
 import path from 'path';
 import qs from 'qs';
 import 'dotenv/config';
@@ -72,6 +73,20 @@ async function processAttachment (attachment, from, mailBox) {
         throw error;
     }
 }
+
+
+
+
+function removeInsertedInvoices(inserted){
+    try {
+        for(const insertedInvoice of inserted){
+            deleteInvoice(insertedInvoice);
+        }
+    } catch (error) {
+        console.log(error);
+    }
+}
+
 
 async function moveToErrorBox(imap, seqno) {
     try {
@@ -225,6 +240,109 @@ function createErrorMailBox(imap){
     }
 }
 
+function startFetchInterval(imap, account){
+    try {
+        const FETCH_INTERVAL = 2 * 60 * 1000;
+        const interval = setInterval(() => {
+                if (imap.state !== "authenticated"){
+                    console.log('IMAP no está autenticado, no se pueden buscar mensajes.');
+                    return;
+                } 
+
+                imap.seq.search(["UNSEEN"], (err, results) => {
+                if (err) {
+                    console.error("Error buscando mensajes:", err);
+                    return;
+                }
+
+                if (!results.length) {
+                    console.log("No hay mensajes nuevos.");
+                    return;
+                }
+
+                console.log(`${results.length} mensajes nuevos.`);
+
+                const fetch = imap.seq.fetch(results, {
+                                bodies: '',
+                                struct: true,
+                                markSeen: false
+                            });
+                fetchMails(fetch, imap, account);
+
+                fetch.once("error", (err) => console.error("Error en fetch:", err));
+                });
+            }, FETCH_INTERVAL);
+        return interval;
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+function fetchMails(fetch, imap, account){
+    try {
+        fetch.on('message', function (msg, seqno) {
+                                msg.on('body', function (stream) {
+                                    simpleParser(stream, async (err, parsed) => {
+                                        if (err) {
+                                            
+                                            moveToErrorBox(imap, seqno);
+
+                                            console.error('Error parseando mensaje:', err.message);
+                                            return;
+                                        }
+
+                                        if (parsed.attachments && parsed.attachments.length > 0) {
+                                            const inserted = [];
+                                            let errored = false;
+
+                                            const pdfs = parsed.attachments.filter(x => x.contentType === 'application/pdf');
+                                            console.log(pdfs)
+                                            for(const pdf of pdfs){
+                                                const invoice = await processAttachment(pdf, parsed.from.value[0].address, account.user)
+                                                                    .catch(err => {
+                                                                            console.error('Error procesando adjunto:', err.message);
+                                                                            errored = true;
+                                                                        });
+
+                                                if(invoice && invoice.Id){
+                                                    inserted.push(invoice);   
+                                                }
+                                            }
+
+                                            if(errored){
+                                                removeInsertedInvoices(inserted);
+                                                moveToErrorBox(imap, seqno);
+                                            }else{
+                                                let result = []
+                                                
+                                                for(const insertedInvoice of inserted){
+                                                    const data = await getInvoiceData(insertedInvoice.Id);
+
+                                                    if(!data){
+                                                        result.push(false);
+                                                    }else{
+                                                        result.push(await sendInvoiceAI(data))
+                                                    }
+                                                    
+                                                }
+
+                                                if(result.filter(x => x == false).length > 0){
+                                                    removeInsertedInvoices(inserted);
+                                                    moveToErrorBox(imap, seqno);
+                                                    console.log('Error enviando factura a Facturaitor o actualizando la base de datos');
+                                                }
+
+                                                markSeen(imap, seqno);
+                                            }
+                                        }
+                                    });
+                                });
+                            });
+    } catch (error) {
+        console.log(error);
+    }
+}
+
 export { 
     fileToBase64, 
     deleteInvoice, 
@@ -237,5 +355,7 @@ export {
     markSeen,
     getJobStatus,
     getJobResult,
-    updateJobResult
+    updateJobResult,
+    fetchMails,
+    startFetchInterval
 };

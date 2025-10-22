@@ -2,7 +2,6 @@ import 'dotenv/config';
 import sql from 'mssql';
 const connect = sql.connect;
 import fs, { stat } from 'fs';
-import { fileToBase64 } from './utilities.js';
 
 const config = {
   user: process.env.DB_USER,
@@ -107,11 +106,7 @@ async function getInvoiceData(DocId){
         .input('E_mail', sql.VarChar(150), invoice.ProveedorEmail)
         .query('select TOP 1 Proveedor, FacturasAcreedor from ProvDatos where E_Mail = @E_mail order by IdProveedor Desc');
 
-        const file = await fileToBase64(invoice.Ruta);
-
-        if(!file){
-            throw new Error('No se pudo leer el archivo de la factura');
-        }
+        //leer archivo de la ruta para ver si no está vacío y no enviar algo que de error y evite fallos
 
         if(proveedor.recordset.length > 0){
             console.log(proveedor.recordset[0].FacturasAcreedor);
