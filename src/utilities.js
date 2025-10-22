@@ -62,9 +62,7 @@ async function processAttachment (attachment, from, mailBox) {
                 throw new Error('No se pudo actualizar la ruta de la factura en la base de datos');
             }
 
-            const docBinary = await fileToBase64(idDocPath);
-
-            return { Id: DocId, binary: docBinary, Ruta: idDocPath};
+            return { Id: DocId, Ruta: idDocPath};
         }
     }catch(error){
         if(DocId != 0){
@@ -151,7 +149,7 @@ async function sendInvoiceAI(invoice, isRescan = false){
         data : data
         };
         
-
+        //TODO Controlar timeouts y estados para volver a pedir resultado si no se recibe nada
         const response = await axios.request(config);
 
         if(response.status == 422){
@@ -303,7 +301,7 @@ function fetchMails(fetch, imap, account){
                                                                             console.error('Error procesando adjunto:', err.message);
                                                                             errored = true;
                                                                         });
-
+                                                
                                                 if(invoice && invoice.Id){
                                                     inserted.push(invoice);   
                                                 }

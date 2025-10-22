@@ -56,7 +56,7 @@ router.post('/job-reply', async (req, res) => {
         console.log(req.headers)
         const { job_id, status } = req.body;
 
-        if(!job_id || !invoice_data || !status){
+        if(!job_id || !status){
             return res.status(400).json({ error: 'Se deben proporcionar los campos: job_id, invoice_data y status' });
         }
 
