@@ -6,10 +6,9 @@ import path from 'path';
 import { getAccounts, postJobData, getInvoiceData } from './db.js';
 import { startApi } from './api/api.js';
 import { deleteInvoice, __dirname, __filename, processAttachment, sendInvoiceAI, createErrorMailBox, markSeen, moveToErrorBox, fetchMails, startFetchInterval
- } from './utilities.js';
+, sendHealthCheckAI } from './utilities.js';
 import './logger-setup.js';
 import { clearInterval } from 'timers';
-import { start } from 'repl';
 
 const activeConnections = [];
 
@@ -31,13 +30,20 @@ function prepareBox(account){
             imap.openBox('INBOX', false, function (err, box) {
                 if (err) throw err;
 
-                imap.on('mail', function () {
+                imap.on('mail',async function () {
                     console.log('Nuevos correos detectados, procesando...');
                     
+                    let apiHealth = await sendHealthCheckAI();
+
+                    if(!apiHealth){
+                        console.log('La IA ha devuelto un error de conexión. Se pospone el procesamiento de correos.');
+                        return;
+                    }
+
                     imap.openBox('INBOX', false, function (err, box) {
                         if (err) throw err;
 
-                        imap.seq.search(['UNSEEN'], (err, results) => {
+                        imap.seq.search(['UNSEEN'], async (err, results) => {
                             if (err) {
                                 console.error('Error al buscar correos no leídos:', err.message);
                                 return;
@@ -54,7 +60,7 @@ function prepareBox(account){
                                 markSeen: false
                             });
                             
-                            fetchMails(fetch, imap, account);
+                            await fetchMails(fetch, imap, account);
 
                             fetch.on('error', function (err) {
                                 console.error('Error al buscar mensajes:', err.message);

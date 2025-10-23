@@ -20,7 +20,7 @@ const transport = isDev
       target: "pino-pretty",
       options: {
         colorize: true,
-        translateTime: "HH:MM:ss",
+        translateTime: "SYS:yyyy-mm-dd HH:MM:ss",
         ignore: "pid,hostname",
       },
     })
@@ -30,6 +30,7 @@ const logger = pino(
   {
     level: process.env.LOG_LEVEL || "info",
     base: { service: "facturaitor-mail" },
+    timestamp: pino.stdTimeFunctions.isoTime,
   },
   isDev
     ? pino.multistream([{ stream: transport }, { stream: fileStream }])

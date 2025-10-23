@@ -119,6 +119,23 @@ async function markSeen(imap, seqno) {
     }
 }
 
+
+async function markUnseen(imap, seqno) {
+    try {
+        if (seqno) {
+            imap.seq.delFlags(seqno, ['\\Seen'], (err) => {
+                if (err) {
+                    console.log('Error marcando como no leído:', err.message);
+                } else {
+                    console.log('Correo marcado como no leído');
+                }
+            });
+        }
+    } catch (error) {
+        console.log(error);
+    }
+}
+
 async function sendInvoiceAI(invoice, isRescan = false){
     try {
         let IdEmpotencyKey = `${Date.now()}-${invoice.Id}`;
@@ -173,6 +190,37 @@ async function sendInvoiceAI(invoice, isRescan = false){
     } catch (error) {
         console.log('Error enviando la factura a AI:');
         console.log(error)
+    }
+}
+
+
+async function sendHealthCheckAI(){
+    try {
+        let config = {
+        validateStatus: (status) => true,
+        method: 'get',
+        maxBodyLength: Infinity,
+        url: `${process.env.AIHOST}/health`,
+        headers: { 
+            'Content-Type': 'application/x-www-form-urlencoded', 
+            'Accept': 'application/json'
+        },
+        
+        };
+        
+        const response = await axios.request(config);
+
+        if(response.data.status == 'healthy'){
+            return true;
+        }
+            
+        return false;
+    } catch (error) {
+        console.log('Error enviando la factura a AI:');
+        console.log(error)
+        if(error.code === 'ECONNREFUSED'){
+            return false;
+        }
     }
 }
 
@@ -248,26 +296,31 @@ function startFetchInterval(imap, account){
                 } 
 
                 imap.seq.search(["UNSEEN"], (err, results) => {
-                if (err) {
-                    console.error("Error buscando mensajes:", err);
-                    return;
-                }
+                    if (err) {
+                        console.error("Error buscando mensajes:", err);
+                        return;
+                    }
 
-                if (!results.length) {
-                    console.log("No hay mensajes nuevos.");
-                    return;
-                }
+                    if (!results.length) {
+                        console.log("No hay mensajes nuevos.");
+                        return;
+                    }
 
-                console.log(`${results.length} mensajes nuevos.`);
+                    console.log(`${results.length} mensajes nuevos.`);
 
-                const fetch = imap.seq.fetch(results, {
-                                bodies: '',
-                                struct: true,
-                                markSeen: false
-                            });
-                fetchMails(fetch, imap, account);
+                    if(!sendHealthCheckAI()){
+                        return;
+                    }
+                    
+                    const fetch = imap.seq.fetch(results, {
+                                    bodies: '',
+                                    struct: true,
+                                    markSeen: false
+                                });
 
-                fetch.once("error", (err) => console.error("Error en fetch:", err));
+                    fetchMails(fetch, imap, account);
+
+                    fetch.once("error", (err) => console.error("Error en fetch:", err));
                 });
             }, FETCH_INTERVAL);
         return interval;
@@ -276,7 +329,7 @@ function startFetchInterval(imap, account){
     }
 }
 
-function fetchMails(fetch, imap, account){
+async function fetchMails(fetch, imap, account){
     try {
         fetch.on('message', function (msg, seqno) {
                                 msg.on('body', function (stream) {
@@ -294,7 +347,7 @@ function fetchMails(fetch, imap, account){
                                             let errored = false;
 
                                             const pdfs = parsed.attachments.filter(x => x.contentType === 'application/pdf');
-                                            console.log(pdfs)
+                                            
                                             for(const pdf of pdfs){
                                                 const invoice = await processAttachment(pdf, parsed.from.value[0].address, account.user)
                                                                     .catch(err => {
@@ -355,5 +408,7 @@ export {
     getJobResult,
     updateJobResult,
     fetchMails,
-    startFetchInterval
+    startFetchInterval,
+    markUnseen,
+    sendHealthCheckAI
 };
