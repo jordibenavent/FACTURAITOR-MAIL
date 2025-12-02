@@ -1,16 +1,20 @@
 import 'dotenv/config';
 import Imap from 'imap';
-import { simpleParser } from 'mailparser';
-import fs from 'fs';
-import path from 'path';
-import { getAccounts, postJobData, getInvoiceData } from './db.js';
+import { getAccounts } from './db.js';
 import { startApi } from './api/api.js';
-import { deleteInvoice, __dirname, __filename, processAttachment, sendInvoiceAI, createErrorMailBox, markSeen, moveToErrorBox, fetchMails, startFetchInterval
-, sendHealthCheckAI } from './utilities.js';
+import { 
+    __dirname, 
+    __filename, 
+    createErrorMailBox, 
+    fetchMails, 
+    startFetchInterval,
+    sendHealthCheckAI, 
+} from './utilities.js';
 import './logger-setup.js';
 import { clearInterval } from 'timers';
 
 const activeConnections = [];
+
 
 function prepareBox(account){
     const imap = new Imap(account);
@@ -79,18 +83,12 @@ function prepareBox(account){
 
     imap.once('close', function (err) {
         console.log('Conexión IMAP cerrada: ', err);
-        imap.end();
-    });
+        imap.removeAllListeners();
 
-    imap.on("alert", (error) => console.log("IMAP alert:", error));
-
-    imap.once('error', function (err) {
-        console.error('Error en IMAP:', err);
-        imap.end();
-    });
-
-    imap.once('end', function () {
-        console.log('Conexión IMAP terminada');
+        let index = activeConnections.indexOf(imap);
+        if (index > -1) {
+            activeConnections.splice(index, 1);
+        }
 
         if(fetchInterval){
             clearInterval(fetchInterval);
@@ -98,6 +96,17 @@ function prepareBox(account){
         }
 
         reconnect();
+    });
+
+    imap.on("alert", (error) => console.log("IMAP alert:", error));
+
+    imap.once('error', function (err) {
+        console.error('Error en IMAP:', err);
+    });
+
+    imap.once('end', function () {
+        console.log('Conexión IMAP terminada');
+        
     });
     
     imap.connect();
@@ -110,16 +119,16 @@ async function startMailboxes() {
         
         const dbAccounts = await getAccounts();
         const accounts = dbAccounts.recordset;
-        
+
         if(activeConnections.length > 0) {
             for(const mb of activeConnections) {
                 console.log(`Cerrando conexión activa... `);
-                mb.removeAllListeners('end');
+                mb.removeAllListeners();
                 mb.end();
             }
             activeConnections.length = 0;
         }
-        
+
         for(const account of accounts) {
             console.log(`Conectando a ${account.Email}...`);
             
@@ -130,17 +139,12 @@ async function startMailboxes() {
                 port: account.Port,
                 tls: account.TLS,
                 tlsOptions: { rejectUnauthorized: false },
-                debug: (msg) => {
-                    if (
-                        msg.toLowerCase().includes("bad") ||
-                        msg.toLowerCase().includes("no ") || 
-                        msg.toLowerCase().includes("error") ||
-                        msg.toLowerCase().includes("fail") ||
-                        msg.toLowerCase().includes("disconnect")
-                    ) {
-                        console.log(`[IMAP DEBUG] ${msg.trim()}`);
-                    }
-                }
+                keepalive: {
+                    interval: 300000,
+                    idleInterval: 300000,
+                    forceNoop: true
+                },
+                debug: (msg) => console.log(`[IMAP DEBUG] ${msg.trim()}`)
             }
 
             prepareBox(imapAccount);

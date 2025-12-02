@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { mkdir, readFile, writeFile } from 'fs/promises';
-import { deleteInvoiceData, getInvoiceData, putInvoicePath, postInvoiceData, postJobData, getJobs, putJobData, putInvoiceClaveId } from './db.js';
+import { deleteInvoiceData, getInvoiceData, putInvoicePath, postInvoiceData, postJobData, getJobs, putJobData, putInvoiceClaveId, getAuthorizedDomains, getPermitedExtensions } from './db.js';
 import axios from 'axios';
 import FormData from "form-data";
 import { fileURLToPath } from 'url';
@@ -9,6 +9,7 @@ import { simpleParser } from 'mailparser';
 import path from 'path';
 import qs from 'qs';
 import 'dotenv/config';
+import c from 'config';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -146,12 +147,19 @@ async function sendInvoiceAI(invoice, isRescan = false){
         data.append('webhook_url', `${process.env.WEBHOOK_URL}` ?? '');
         data.append('webhook_secret', '');
         data.append('metadata', JSON.stringify({
-            "customer": { "name": invoice.customerName ?? '' },
-            "supplier": { "name": invoice.supplierName ?? '' },
+            "customer": { 
+                "name": invoice.CustomerName ?? '',
+                "tax_id": invoice.CustomerNif ?? ''
+            },
+            "supplier": { 
+                "name": invoice.SupplierName ?? '',
+                "tax_id": invoice.SupplierNif ?? ''
+             },
             "handlesProjects": invoice.handlesProjects ?? false,
             "type": invoice.type ?? 'creditor',
             "rescan": isRescan
         }));
+
 
         let config = {
         validateStatus: (status) => true,
@@ -301,14 +309,14 @@ function startFetchInterval(imap, account){
                         return;
                     }
 
-                    if (!results.length) {
-                        console.log("No hay mensajes nuevos.");
+                    if (results.length === 0) {
                         return;
                     }
+                    
 
-                    console.log(`${results.length} mensajes nuevos.`);
 
                     if(!sendHealthCheckAI()){
+                        console.log('IA Sin servicio. Se pospone el procesamiento de correos.');
                         return;
                     }
                     
@@ -334,57 +342,93 @@ async function fetchMails(fetch, imap, account){
         fetch.on('message', function (msg, seqno) {
                                 msg.on('body', function (stream) {
                                     simpleParser(stream, async (err, parsed) => {
-                                        if (err) {
-                                            
-                                            moveToErrorBox(imap, seqno);
+                                        try{
+                                            if (err) {
+                                                moveToErrorBox(imap, seqno);
 
-                                            console.error('Error parseando mensaje:', err.message);
-                                            return;
-                                        }
-
-                                        if (parsed.attachments && parsed.attachments.length > 0) {
-                                            const inserted = [];
-                                            let errored = false;
-
-                                            const pdfs = parsed.attachments.filter(x => x.contentType === 'application/pdf');
-                                            
-                                            for(const pdf of pdfs){
-                                                const invoice = await processAttachment(pdf, parsed.from.value[0].address, account.user)
-                                                                    .catch(err => {
-                                                                            console.error('Error procesando adjunto:', err.message);
-                                                                            errored = true;
-                                                                        });
-                                                
-                                                if(invoice && invoice.Id){
-                                                    inserted.push(invoice);   
-                                                }
+                                                console.error('Error parseando mensaje:', err.message);
+                                                return;
                                             }
 
-                                            if(errored){
-                                                removeInsertedInvoices(inserted);
-                                                moveToErrorBox(imap, seqno);
-                                            }else{
-                                                let result = []
-                                                
-                                                for(const insertedInvoice of inserted){
-                                                    const data = await getInvoiceData(insertedInvoice.Id);
+                                            const domainResultset = await getAuthorizedDomains()
+                                            const extResultset = await getPermitedExtensions()
 
-                                                    if(!data){
-                                                        result.push(false);
-                                                    }else{
-                                                        result.push(await sendInvoiceAI(data))
+                                            if(!domainResultset.find(domain => parsed.from.value[0].address.toLocaleLowerCase().endsWith(`@${domain.Dominio.toLowerCase()}`))){
+                                                console.log('Mail de dominio no autorizado, marcando como leído y saltando procesamiento.');
+                                                markSeen(imap, seqno);
+                                                return;
+                                            }
+
+                                            if (parsed.attachments && parsed.attachments.length > 0) {
+                                                const inserted = [];
+                                                let errored = false;
+                                                
+                                                for(const file of parsed.attachments){
+                                                    const extension = file.filename.split('.').pop().toLowerCase();
+                                                    const contentType = file.contentType.split('/').pop().toLowerCase();
+
+                                                    const isCorrectExtension = extResultset.find(ext => ext.TipoArchivo.toLowerCase() == extension);
+                                                    const isCorrectContentType = extResultset.find(ext => ext.TipoArchivo.toLowerCase() == contentType);
+
+                                                    if(!isCorrectExtension && !isCorrectContentType){
+                                                        console.log(`La extensión y el tipo son incorrectos, pasando al siguiente fichero. Id: ${file.contentId}, Nombre: ${file.filename}`);
+                                                        continue;
                                                     }
+
+                                                    const fileSizeKB = file.size / 1024;
+                                                    console.log(extResultset);
+                                                    const maxSizeKB = parseInt(extResultset.find(ext => ext.TipoArchivo.toLowerCase() == extension).MaxKilobyte ?? "10000000");
                                                     
+                                                    console.log(maxSizeKB);
+
+                                                    if(maxSizeKB < fileSizeKB){
+                                                        console.log(`El tamaño del fichero excede el permitido para la extensión, pasando al siguiente fichero. Id: ${file.contentId}, Nombre: ${file.filename}`);
+                                                        continue;
+                                                    }
+
+                                                    const invoice = await processAttachment(file, parsed.from.value[0].address, account.user)
+                                                                        .catch(err => {
+                                                                                console.error('Error procesando adjunto:', err.message);
+                                                                                errored = true;
+                                                                            });
+                                                    
+                                                    if(invoice && invoice.Id){
+                                                        inserted.push(invoice);   
+                                                    }
                                                 }
 
-                                                if(result.filter(x => x == false).length > 0){
+                                                if(errored){
                                                     removeInsertedInvoices(inserted);
                                                     moveToErrorBox(imap, seqno);
-                                                    console.log('Error enviando factura a Facturaitor o actualizando la base de datos');
-                                                }
+                                                    console.log('Error procesando adjuntos, moviendo correo a REVISAR');
+                                                }else{
+                                                    let result = []
+                                                    
+                                                    for(const insertedInvoice of inserted){
+                                                        const data = await getInvoiceData(insertedInvoice.Id);
 
-                                                markSeen(imap, seqno);
+                                                        if(!data){
+                                                            result.push(false);
+                                                        }else{
+                                                            result.push(await sendInvoiceAI(data))
+                                                        }
+                                                        
+                                                    }
+
+                                                    if(result.filter(x => x == false).length > 0){
+                                                        removeInsertedInvoices(inserted);
+                                                        markUnseen(imap, seqno);
+                                                        console.log('Error enviando factura a Facturaitor o actualizando la base de datos');
+                                                    }else{
+                                                        markSeen(imap, seqno);
+                                                    }
+
+                                                }
                                             }
+                                        }catch(err){
+                                            console.log('Error procesando el correo:');
+                                            moveToErrorBox(imap, seqno);
+                                            console.error(err)
                                         }
                                     });
                                 });

@@ -75,42 +75,6 @@ cd /d "%PROJECT_PATH%"
 echo Instalando dependencias del proyecto...
 call npm install >> "%LOG_FILE%" 2>&1
 
-REM ================================
-REM INSTALAR PM2 Y CONFIGURAR
-REM ================================
-echo Instalando PM2 globalmente...
-call npm install -g pm2 >> "%LOG_FILE%" 2>&1
-
-echo Iniciando aplicación con PM2...
-REM Cambia "app.js" y "mi-app" según tu proyecto
-call pm2 start src/index.js --name "Facturaitor" >> "%LOG_FILE%" 2>&1
-
-echo Guardando estado de PM2...
-call pm2 save >> "%LOG_FILE%" 2>&1
-
-REM ================================
-REM CREAR TAREA PROGRAMADA DE ARRANQUE
-REM ================================
-echo Creando tarea programada para restaurar PM2 al inicio del sistema...
-schtasks /Query /TN "%TASK_NAME%" >nul 2>&1
-if %errorlevel%==0 (
-echo Eliminando tarea anterior...
-schtasks /Delete /TN "%TASK_NAME%" /F >nul 2>&1
-)
-
-REM Crear una tarea que se ejecute al inicio, con privilegios elevados, incluso sin iniciar sesión
-schtasks /Create ^
-/SC ONSTART ^
-/TN "%TASK_NAME%" ^
-/RL HIGHEST ^
-/RU "SYSTEM" ^
-/TR ""%PM2_PATH%" resurrect" >> "%LOG_FILE%" 2>&1
-
-if %errorlevel%==0 (
-echo Tarea de PM2 creada correctamente.
-) else (
-echo ERROR: No se pudo crear la tarea programada. Revisa permisos o ejecuta este script como Administrador.
-)
 
 echo =========================================
 echo Instalación y configuración completadas.

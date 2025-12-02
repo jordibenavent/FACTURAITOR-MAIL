@@ -98,13 +98,14 @@ async function getInvoiceData(DocId){
         const invoice = result.recordset[0];
         invoice.Ruta = invoice.Ruta.trim();
 
+
         const customer = await pool.request()
         .input('Email', sql.VarChar(150), invoice.EmailBox)
-        .query('select EmpNombre, ProyectoGestion from Empresas where EmpEmail = @Email');
+        .query('select top 1 EmpNombre, EmpNif, ProyectoGestion from Empresas where EmpEmail = @Email');
 
         const proveedor = await pool.request()
         .input('E_mail', sql.VarChar(150), invoice.ProveedorEmail)
-        .query('select TOP 1 Proveedor, FacturasAcreedor from ProvDatos where E_Mail = @E_mail order by IdProveedor Desc');
+        .query('select TOP 1 Proveedor, Nif, FacturasAcreedor from ProvDatos where E_Mail = @E_mail order by IdProveedor Desc');
 
         //TODO leer archivo de la ruta para ver si no está vacío y no enviar algo que de error y evite fallos
 
@@ -125,6 +126,8 @@ async function getInvoiceData(DocId){
             Ruta: invoice.Ruta,
             CustomerName: customer.recordset.length > 0 ? customer.recordset[0].EmpNombre.trim() : '',
             SupplierName: proveedor.recordset.length > 0 ? proveedor.recordset[0].Proveedor.trim() : '',
+            CustomerNif: customer.recordset.length > 0 ? customer.recordset[0].EmpNif.trim() : '',
+            SupplierNif: proveedor.recordset.length > 0 ? proveedor.recordset[0].Nif.trim() : '',
             handlesProjects: customer.recordset.length > 0 ? customer.recordset[0].ProyectoGestion : false,
             type: invoiceType
         };
@@ -225,6 +228,33 @@ async function putJobData(JobId, JSON, Status){
     }
 }
 
+async function getAuthorizedDomains(){
+    try {
+        const pool = await getConnection();
+        const result = await pool
+            .request()
+            .query(`select CIF, Dominio from RemitentesAutorizados`);
+
+        
+        return result.recordset;
+    } catch (error) {
+        
+    }
+}
+
+async function getPermitedExtensions(){
+    try {
+        const pool = await getConnection();
+        const result = await pool
+            .request()
+            .query(`select TipoArchivo, MaxKilobyte from FicherosPermitidos`);
+
+        return result.recordset;
+    } catch (error) {
+        
+    } 
+}
+
 export { 
     sql, 
     getAccounts,
@@ -236,5 +266,7 @@ export {
     postJobData, 
     putJobData,
     getJobs,
-    putInvoiceClaveId
+    putInvoiceClaveId, 
+    getAuthorizedDomains,
+    getPermitedExtensions
 };
