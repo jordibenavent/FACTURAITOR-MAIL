@@ -6,7 +6,7 @@ import axios from 'axios';
 import FormData from "form-data";
 import { fileURLToPath } from 'url';
 import { simpleParser } from 'mailparser';
-import path from 'path';
+import path, { parse } from 'path';
 import qs from 'qs';
 import 'dotenv/config';
 import c from 'config';
@@ -40,6 +40,8 @@ async function processAttachment (attachment, from, mailBox) {
     let docPath = '';
     try{
         const filename = attachment.filename;
+        console.log('Procesando adjunto: ' + attachment.filename)
+        
         if (filename) {
             DocId = await postInvoiceData(from, mailBox);
 
@@ -49,8 +51,10 @@ async function processAttachment (attachment, from, mailBox) {
 
             if(process.env.DEBUG){
                 docPath = path.join(__dirname, 'temp', DocId.toString());
+                console.log('Estamos en debug y la ruta es: ' + docPath)
             }else{
                 docPath = path.join(process.env.DOC_PATH, DocId.toString());
+                console.log('Estamos en prod y la ruta es: ' + docPath)
             }
             
             await mkdir(docPath, { recursive: true });
@@ -297,12 +301,14 @@ function createErrorMailBox(imap){
 function startFetchInterval(imap, account){
     try {
         const FETCH_INTERVAL = 2 * 60 * 1000;
+        console.log('Creando tarea programada')
         const interval = setInterval(() => {
                 if (imap.state !== "authenticated"){
                     console.log('IMAP no está autenticado, no se pueden buscar mensajes.');
                     return;
                 } 
 
+                console.log('Leyendo mails desde tarea programada.')
                 imap.seq.search(["UNSEEN"], (err, results) => {
                     if (err) {
                         console.error("Error buscando mensajes:", err);
@@ -323,7 +329,7 @@ function startFetchInterval(imap, account){
                     const fetch = imap.seq.fetch(results, {
                                     bodies: '',
                                     struct: true,
-                                    markSeen: false
+                                    markSeen: true
                                 });
 
                     fetchMails(fetch, imap, account);
@@ -339,10 +345,12 @@ function startFetchInterval(imap, account){
 
 async function fetchMails(fetch, imap, account){
     try {
-        fetch.on('message', function (msg, seqno) {
-                                msg.on('body', function (stream) {
+        fetch.once('message', function (msg, seqno) {
+                                msg.once('body', function (stream) {
                                     simpleParser(stream, async (err, parsed) => {
                                         try{
+                                            console.log('Leyendo cuerpo del correo.')
+                                            
                                             if (err) {
                                                 moveToErrorBox(imap, seqno);
 
@@ -350,12 +358,14 @@ async function fetchMails(fetch, imap, account){
                                                 return;
                                             }
 
+
                                             const domainResultset = await getAuthorizedDomains()
                                             const extResultset = await getPermitedExtensions()
 
+                                            
+
                                             if(!domainResultset.find(domain => parsed.from.value[0].address.toLocaleLowerCase().endsWith(`@${domain.Dominio.toLowerCase()}`))){
-                                                console.log('Mail de dominio no autorizado, marcando como leído y saltando procesamiento.');
-                                                markSeen(imap, seqno);
+                                                console.log('Mail de dominio no autorizado, saltando procesamiento.');
                                                 return;
                                             }
 
@@ -364,6 +374,8 @@ async function fetchMails(fetch, imap, account){
                                                 let errored = false;
                                                 
                                                 for(const file of parsed.attachments){
+                                                    console.log('Leyendo documento: ' + file.filename)
+
                                                     const extension = file.filename.split('.').pop().toLowerCase();
                                                     const contentType = file.contentType.split('/').pop().toLowerCase();
 
@@ -376,10 +388,9 @@ async function fetchMails(fetch, imap, account){
                                                     }
 
                                                     const fileSizeKB = file.size / 1024;
-                                                    console.log(extResultset);
+                                                    console.log('Tamaño del fichero en kb: ' + fileSizeKB)
                                                     const maxSizeKB = parseInt(extResultset.find(ext => ext.TipoArchivo.toLowerCase() == extension).MaxKilobyte ?? "10000000");
-                                                    
-                                                    console.log(maxSizeKB);
+                                                    console.log('Tamaño máximo permitido: ' + maxSizeKB);
 
                                                     if(maxSizeKB < fileSizeKB){
                                                         console.log(`El tamaño del fichero excede el permitido para la extensión, pasando al siguiente fichero. Id: ${file.contentId}, Nombre: ${file.filename}`);

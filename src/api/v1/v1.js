@@ -7,6 +7,7 @@ const router = express.Router();
 
 router.get('/restart-accounts', async (req, res) => {
         try {
+            console.log('Reiniciando las cuentas de correo')
             startMailboxes();
             res.status(200).json({ msg: 'Reiniciando buzones' });
         } catch (err) {

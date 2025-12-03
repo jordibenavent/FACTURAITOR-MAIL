@@ -16,6 +16,8 @@ import { clearInterval } from 'timers';
 const activeConnections = [];
 
 
+
+
 function prepareBox(account){
     const imap = new Imap(account);
     activeConnections.push(imap);
@@ -34,9 +36,16 @@ function prepareBox(account){
             imap.openBox('INBOX', false, function (err, box) {
                 if (err) throw err;
 
-                imap.on('mail',async function () {
-                    console.log('Nuevos correos detectados, procesando...');
-                    
+                fetchInterval = startFetchInterval(imap, account);
+
+
+            });
+        } catch (error) {
+            console.error('Error en la bandeja de entrada inbox:', error.message);
+        }
+    });
+
+    imap.on('mail',async function () {
                     let apiHealth = await sendHealthCheckAI();
 
                     if(!apiHealth){
@@ -44,24 +53,24 @@ function prepareBox(account){
                         return;
                     }
 
-                    imap.openBox('INBOX', false, function (err, box) {
-                        if (err) throw err;
-
-                        imap.seq.search(['UNSEEN'], async (err, results) => {
+                    imap.seq.search(['UNSEEN'], async (err, results) => {
                             if (err) {
                                 console.error('Error al buscar correos no leídos:', err.message);
                                 return;
                             }
+
 
                             if (!results || results.length === 0) {
                                 console.log('No hay nuevos correos');
                                 return;
                             }
 
+                            console.log('Nuevos correos detectados con el evento, procesando...');
+
                             const fetch = imap.seq.fetch(results, {
                                 bodies: '',
                                 struct: true,
-                                markSeen: false
+                                markSeen: true
                             });
                             
                             await fetchMails(fetch, imap, account);
@@ -70,15 +79,6 @@ function prepareBox(account){
                                 console.error('Error al buscar mensajes:', err.message);
                             });
                         })
-                    });
-                });
-
-                fetchInterval = startFetchInterval(imap, account);
-
-            });
-        } catch (error) {
-            console.error('Error en la bandeja de entrada inbox:', error.message);
-        }
     });
 
     imap.once('close', function (err) {
@@ -109,6 +109,8 @@ function prepareBox(account){
         
     });
     
+    console.log("Listeners:", imap.listenerCount("mail"), imap.listenerCount("message"));
+
     imap.connect();
 }
 
@@ -139,11 +141,15 @@ async function startMailboxes() {
                 port: account.Port,
                 tls: account.TLS,
                 tlsOptions: { rejectUnauthorized: false },
-                keepalive: {
+                //Después de problemas y comerme la cabeza durante horas, esto da una sarta de problemas interesante. 
+                //Al usar esta parte del objeto, lo estás configurando para que nunca se duerma(lo que podría parecer interesante desde un principio
+                //ya que se supone que debería ayudar a que no se desconecte el servicio del host de mail, pues no, rompe el IDLE, un protocolo 
+                //necesario para que los eventos funcionen y el host envíe las notificaciones)
+                /*keepalive: {
                     interval: 300000,
-                    idleInterval: 300000,
+                    idleInterval: 50000,
                     forceNoop: true
-                },
+                },*/
                 debug: (msg) => console.log(`[IMAP DEBUG] ${msg.trim()}`)
             }
 

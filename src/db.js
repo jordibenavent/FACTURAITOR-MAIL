@@ -63,6 +63,8 @@ async function postInvoiceData(from, mailBox){
         .output('IdDocOut', sql.Int)
         .execute('pPers_InsertaFactura');
 
+        console.log('Se ha insertado la cabecera: ' + result.output.IdDocOut)
+
         return result.output.IdDocOut;
     } catch (error) {
         console.log(error);
