@@ -49,7 +49,7 @@ async function processAttachment (attachment, from, mailBox) {
                 throw new Error('No se pudo insertar el registro de la factura en la base de datos');
             }
 
-            if(process.env.DEBUG){
+            if(process.env.DEBUG === "true"){
                 docPath = path.join(__dirname, 'temp', DocId.toString());
                 console.log('Estamos en debug y la ruta es: ' + docPath)
             }else{

@@ -90,7 +90,6 @@ REM Crear archivo si no existe
 if not exist "%ENV_FILE%" (
     echo Creando .env.base...
     (
-        echo API="http://localhost:5000"
         echo AIHOST="http://44.198.229.9:8000"
         echo API_PUBLICA="http://localhost:5000"
         echo WEBHOOK_URL="/v1/job-reply"
@@ -99,11 +98,11 @@ if not exist "%ENV_FILE%" (
         echo DB_PASSWORD=
         echo DB_SERVER="localhost"
         echo DB_NAME="Facturaltor_DataBD"
-        echo DEBUG=false
+        echo DEBUG="false"
     ) > "%ENV_FILE%"
 )
 
-call :editEnv "API" "http://localhost:5000"
+call :editEnv "API_PUBLICA" "http://localhost:5000"
 call :editEnv "DB_USER" ""
 call :editEnv "DB_PASSWORD" ""
 call :editEnv "DB_SERVER" "localhost"
@@ -138,7 +137,7 @@ nssm set FacturaitorAPI Start SERVICE_AUTO_START
 REM Configurar reinicio automático si hay fallo
 nssm set FacturaitorAPI AppRestartDelay 5000
 nssm set FacturaitorAPI AppThrottle 2000
-nssm set %FacturaitorAPI AppExit Default Restart
+nssm set FacturaitorAPI AppExit Default Restart
 
 REM Iniciar servicio
 echo Iniciando el servicio...
