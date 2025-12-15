@@ -148,8 +148,8 @@ async function sendInvoiceAI(invoice, isRescan = false){
         let data = new FormData();
         data.append('id', `${invoice.Id}`);
         data.append('file', fs.createReadStream(invoice.Ruta));
-        data.append('webhook_url', `${process.env.API_PUBLICA}${process.env.WEBHOOK_URL}` ?? '');
-        data.append('webhook_secret', '');
+        data.append('webhook_url', `${process.env.API_PUBLICA}/v1/job-reply` ?? '');
+        data.append('webhook_secret', 'a');
         data.append('metadata', JSON.stringify({
             "customer": { 
                 "name": invoice.CustomerName ?? '',

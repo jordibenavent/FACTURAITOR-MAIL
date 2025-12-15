@@ -144,13 +144,13 @@ async function startMailboxes() {
                 //Después de problemas y comerme la cabeza durante horas, esto da una sarta de problemas interesante. 
                 //Al usar esta parte del objeto, lo estás configurando para que nunca se duerma(lo que podría parecer interesante desde un principio
                 //ya que se supone que debería ayudar a que no se desconecte el servicio del host de mail, pues no, rompe el IDLE, un protocolo 
-                //necesario para que los eventos funcionen y el host envíe las notificaciones)
+                //necesario para que los eventos funcionen y el host envíe las notificaciones a la APP)
                 /*keepalive: {
                     interval: 300000,
                     idleInterval: 50000,
                     forceNoop: true
                 },*/
-                debug: (msg) => console.log(`[IMAP DEBUG] ${msg.trim()}`)
+                //debug: (msg) => console.log(`[IMAP DEBUG] ${msg.trim()}`) //ESTO SE DESCOMENTA SI QUIERES DEBUGAR TODO LO QUE TIENE QUE VER CON EL SERVICIO IMAP
             }
 
             prepareBox(imapAccount);
@@ -166,7 +166,7 @@ async function startMailboxes() {
 
 try {
     startMailboxes();
-    startApi();
+    startApi(process.env.APP_PUERTO);
 } catch (error) {
     console.log('Error iniciando app:', error.message);
 }

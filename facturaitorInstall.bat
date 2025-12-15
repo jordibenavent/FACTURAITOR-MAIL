@@ -19,54 +19,94 @@ if %errorlevel% neq 0 (
 )
 
 
-
-REM ================================
-REM CONFIGURACIÓN
-REM ================================
-set NODE_VERSION=latest-v22.x
-set NODE_INSTALLER=node-v22.20.0-x64.msi
-set NODE_URL=https://nodejs.org/dist/%NODE_VERSION%/%NODE_INSTALLER%
-set PROJECT_PATH=%~dp0
 set LOG_FILE=%PROJECT_PATH%setup_log.txt
-set PM2_PATH=%APPDATA%\npm\pm2.cmd
-set TASK_NAME=PM2_Startup
 
-echo =========================================
-echo Instalando Node.js y configurando PM2
-echo =========================================
-echo Log: %LOG_FILE%
-echo ========================================= >> "%LOG_FILE%"
+REM Llamar a PowerShell como administrador
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0\scriptsInstalacion\iis.ps1"
 
-REM ================================
-REM DESCARGAR E INSTALAR NODEJS
-REM ================================
-if not exist "%NODE_INSTALLER%" (
-echo Descargando Node.js...
-powershell -Command "Invoke-WebRequest '%NODE_URL%' -OutFile '%NODE_INSTALLER%'" >> "%LOG_FILE%" 2>&1
-)
 
-echo Instalando Node.js %NODE_VERSION%...
-msiexec /i "%NODE_INSTALLER%" /qn /norestart ADDLOCAL=ALL >> "%LOG_FILE%" 2>&1
+echo Obteniendo la última versión de Node.js...
 
-REM ================================
-REM ESPERAR DISPONIBILIDAD DE NPM
-REM ================================
-echo Esperando a que npm esté disponible...
-set RETRIES=0
+where node >nul 2>&1
+if %errorlevel%==0 (
+    echo Node.js ya instalado.
+	goto :SKIP_NODE_INSTALL
+) 
 
-where node >nul 2>nul
-if %errorlevel% neq 0 (
-set /a RETRIES+=1
-if %RETRIES% geq 10 (
-echo Node.js no se encontró en el PATH. Revisa la instalación.
-exit /b 1
-)
-timeout /t 5 >nul
-goto WAIT_NODE
-)
+	REM archivo temporal para recibir la versión desde PowerShell
+	set "TMP_VER=%TEMP%\node_latest_ver.txt"
+	if exist "%TMP_VER%" del /f /q "%TMP_VER%" >nul 2>&1
+
+	REM Usar Invoke-RestMethod para obtener la primera entrada del index.json
+	powershell -NoProfile -Command ^
+	  "try { (Invoke-RestMethod 'https://nodejs.org/dist/index.json' -UseBasicParsing)[0].version | Out-File -FilePath '%TMP_VER%' -Encoding ASCII } catch { exit 1 }"
+
+	REM Leer la versión desde el fichero
+	set "NODE_VERSION="
+	if exist "%TMP_VER%" (
+	  set /p NODE_VERSION=<"%TMP_VER%"
+	  del /f /q "%TMP_VER%" >nul 2>&1
+	)
+
+	REM Si NODE_VERSION sigue vacío, intentar obtener la última LTS alternativa
+	if "%NODE_VERSION%"=="" (
+	  echo No se pudo obtener la version desde index.json. Intentando obtener la ultima LTS...
+	  powershell -NoProfile -Command ^
+		"try { (Invoke-RestMethod 'https://nodejs.org/dist/index.json' -UseBasicParsing | Where-Object { $_.lts } | Select-Object -First 1).version | Out-File -FilePath '%TMP_VER%' -Encoding ASCII } catch { exit 1 }"
+	  if exist "%TMP_VER%" (
+		set /p NODE_VERSION=<"%TMP_VER%"
+		del /f /q "%TMP_VER%" >nul 2>&1
+	  )
+	)
+
+	REM Si aún no hay versión, abortar con mensaje
+	if "%NODE_VERSION%"=="" (
+	  echo ERROR: No se pudo determinar la última versión de Node.js.
+	  echo Comprueba la conectividad de red o ejecuta manualmente.
+	  pause
+	  exit /b 1
+	)
+
+	echo Última versión detectada: %NODE_VERSION%
+
+	REM Detectar arquitectura y seleccionar MSI apropiado
+	if /I "%PROCESSOR_ARCHITECTURE%"=="AMD64" (
+	  set "ARCH=x64"
+	) else (
+	  set "ARCH=x86"
+	)
+
+	set "NODE_INSTALLER=node-%NODE_VERSION%-%ARCH%.msi"
+	set "NODE_URL=https://nodejs.org/dist/%NODE_VERSION%/%NODE_INSTALLER%"
+
+	echo URL final: %NODE_URL%
+
+	REM Descargar si no existe
+	if not exist "%NODE_INSTALLER%" (
+	  echo Descargando %NODE_INSTALLER% ...
+	  powershell -NoProfile -Command "try { Invoke-WebRequest -Uri '%NODE_URL%' -OutFile '%NODE_INSTALLER%' -UseBasicParsing } catch { exit 1 }"
+	  if %errorlevel% neq 0 (
+		echo ERROR: fallo al descargar %NODE_URL%
+		pause
+		exit /b 1
+	  )
+	) else (
+	  echo Instalador ya existe: %NODE_INSTALLER%
+	)
+
+	REM Instalar silenciosamente
+	echo Instalando Node.js %NODE_VERSION% ...
+	msiexec /i "%NODE_INSTALLER%" /qn /norestart
+	if %errorlevel% neq 0 (
+	  echo ERROR: msiexec devolvio %errorlevel%
+	  pause
+	  exit /b 1
+	)
 
 echo Node.js instalado correctamente.
-echo ========================================= >> "%LOG_FILE%"
+
+:SKIP_NODE_INSTALL
+
 
 REM ================================
 REM INSTALAR DEPENDENCIAS
@@ -92,21 +132,23 @@ if not exist "%ENV_FILE%" (
     (
         echo AIHOST="http://44.198.229.9:8000"
         echo API_PUBLICA="http://localhost:5000"
-        echo WEBHOOK_URL="/v1/job-reply"
+        echo APP_PUERTO="5000"
         echo DOC_PATH="C:\FacturAItor\FacturAItorApp\FacturAItor\custom\documents\"
-        echo DB_USER=
-        echo DB_PASSWORD=
+        echo DB_USER="sa"
+        echo DB_PASSWORD="-Instalador0000"
         echo DB_SERVER="localhost"
-        echo DB_NAME="Facturaltor_DataBD"
+        echo DB_NAME="Facturaitor_DataBD"
         echo DEBUG="false"
     ) > "%ENV_FILE%"
 )
 
 call :editEnv "API_PUBLICA" "http://localhost:5000"
-call :editEnv "DB_USER" ""
-call :editEnv "DB_PASSWORD" ""
+call :editEnv "APP_PUERTO" "5000"
+call :editEnv "DOC_PATH" "C:\FacturAItor\FacturAItorApp\FacturAItor\custom\documents\"
+call :editEnv "DB_USER" "sa"
+call :editEnv "DB_PASSWORD" "-Instalador0000"
 call :editEnv "DB_SERVER" "localhost"
-call :editEnv "DB_NAME" "Facturaltor_DataBD"
+call :editEnv "DB_NAME" "Facturaitor_DataBD"
 
 
 REM ================================

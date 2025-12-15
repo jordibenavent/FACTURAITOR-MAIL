@@ -54,14 +54,15 @@ router.get('/resend-invoice/:DocId', async (req, res) => {
 router.post('/job-reply', async (req, res) => {
     try {
         console.log('Nueva entrada en /job-reply');
-        console.log(req.headers)
-        const { job_id, status } = req.body;
+
+        const job_id = req.body.job_id;
+        const status = req.body.status;
 
         if(!job_id || !status){
-            return res.status(400).json({ error: 'Se deben proporcionar los campos: job_id, invoice_data y status' });
+            return res.status(400).json({ error: 'Se deben proporcionar los campos: job_id, invoice_data y status' });//TO DO: Actualizar el job id y poner status error IA
         }
 
-        const result = await putJobData(job_id, JSON.stringify(req.body), status);
+        const result = await putJobData(job_id, req.body, status);
 
         res.status(200).json({ resultado: result });
     } catch (err) {

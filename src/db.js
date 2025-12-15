@@ -194,13 +194,14 @@ async function postJobData(JobId, IdEmpotencyKey, Status, DocId){
     }
 }
 
-async function putJobData(JobId, JSON, Status){
+async function putJobData(JobId, Body, Status){
     try {
         if(!JobId || !Status){
             throw new Error('JobId y Status es obligatorio');
         }
-        if(!JSON){
-            JSON = '';
+        
+        if(!Body){
+            Body = '';
         }
 
         switch(Status){
@@ -220,9 +221,24 @@ async function putJobData(JobId, JSON, Status){
         const result = await pool
         .request()
         .input('JobId', sql.VarChar(sql.MAX), JobId)
-        .input('DocJson', sql.VarChar(sql.MAX), JSON)
+        .input('DocJson', sql.VarChar(sql.MAX), JSON.stringify(Body))
         .input('Estado', sql.Int, Status)
-        .query(`UPDATE DocAI Set Estado = @Estado, DocJson = @DocJson where JobId = @JobId and Estado = 1`);
+        .input('Procesado', sql.DateTime2, Body.processed_at ?? null)
+        .input('Status', sql.Int, Status ?? null)
+        .input('Complexity', sql.VarChar(sql.MAX), Body.complexity ?? null)
+        .input('Bytes', sql.BigInt(), Body.metrics.file_size_bytes ?? null)
+        .input('TiempoProcesadoMS', sql.BigInt(), Body.metrics.estimated_processing_time_ms ?? null)
+        .input('TipoContenido', sql.VarChar(sql.MAX), Body.metrics.content_type ?? null)
+        .input('Fiabilidad', sql.Float, Body.confidence ?? null)
+        .input('CodigoErrorIA', sql.VarChar(sql.MAX), Body.error != null ? Body.error.code ?? null : null)
+        .input('MensajeErrorIA', sql.VarChar(sql.MAX), Body.error != null ? Body.error.message ?? null : null)
+        .input('Tokens', sql.BigInt(), Body.token_usage.total_tokens ?? null)
+        .input('PromptTokens', sql.BigInt(), Body.token_usage.prompt_tokens ?? null)
+        .input('FinalizadoTokens', sql.BigInt(), Body.token_usage.completion_tokens ?? null)
+        .query(`UPDATE DocAI Set Estado = @Estado, DocJson = @DocJson, Procesado = @Procesado, Status = @Status, Complexity = @Complexity,
+             Bytes = @Bytes, TiempoProcesadoMS = @TiempoProcesadoMS, TipoContenido = @TipoContenido, Fiabilidad = @Fiabilidad, CodigoErrorIA = @CodigoErrorIA, 
+             MensajeErrorIA = @MensajeErrorIA, Tokens = @Tokens, PromptTokens = @PromptTokens, FinalizadoTokens = @FinalizadoTokens
+             where JobId = @JobId and Estado = 1`);
 
         return result;
     } catch (error) {
@@ -240,7 +256,7 @@ async function getAuthorizedDomains(){
         
         return result.recordset;
     } catch (error) {
-        
+        console.log(error)
     }
 }
 
@@ -253,7 +269,7 @@ async function getPermitedExtensions(){
 
         return result.recordset;
     } catch (error) {
-        
+        console.log(error)
     } 
 }
 
