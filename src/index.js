@@ -72,7 +72,7 @@ function prepareBox(account){
                                 struct: true,
                                 markSeen: true
                             });
-                            
+
                             await fetchMails(fetch, imap, account);
 
                             fetch.on('error', function (err) {
@@ -85,17 +85,19 @@ function prepareBox(account){
         console.log('Conexión IMAP cerrada: ', err);
         imap.removeAllListeners();
 
-        let index = activeConnections.indexOf(imap);
+        /*let index = activeConnections.indexOf(imap);
         if (index > -1) {
             activeConnections.splice(index, 1);
-        }
+        }*/
 
-        if(fetchInterval){
+        if(fetchInterval != null){
             clearInterval(fetchInterval);
             fetchInterval = null;
         }
 
         if(!isManuallyRestarting){
+            console.log('Estado IMAP:' + imap.state);
+            console.log('No es desconexión manual, reconectando...');
             reconnect();
         }
     });
@@ -127,10 +129,23 @@ async function startMailboxes(manualRestart = false) {
 
         if(activeConnections.length > 0) {
             for(const mb of activeConnections) {
-                console.log(`Cerrando conexión activa... `);
-                mb.removeAllListeners();
-                mb.end();
+                if(mb.state != 'disconnected'){
+
+                    console.log(`Cerrando conexión activa... `);
+                    console.log('Estado antes de cerrar:' + mb.state);
+                    console.log('Cerrando bandeja de ' + mb._config.user);
+
+                    mb.end();
+
+                    console.log('Estado despues de cerrar:' + mb.state);
+                    
+                    while(mb.state == 'authenticated' || mb.state == 'connecting' || mb.state == 'connected') {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        console.log('El estado sigue siendo activo, esperando a que se cierre...' + mb.state);
+                    }
+                }
             }
+
             activeConnections.length = 0;
         }
 
