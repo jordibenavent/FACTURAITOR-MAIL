@@ -14,7 +14,7 @@ import './logger-setup.js';
 import { clearInterval } from 'timers';
 
 const activeConnections = [];
-
+let isManuallyRestarting = false;
 
 
 
@@ -95,7 +95,9 @@ function prepareBox(account){
             fetchInterval = null;
         }
 
-        reconnect();
+        if(!isManuallyRestarting){
+            reconnect();
+        }
     });
 
     imap.on("alert", (error) => console.log("IMAP alert:", error));
@@ -116,9 +118,10 @@ function prepareBox(account){
 
 
 
-async function startMailboxes() {
+async function startMailboxes(manualRestart = false) {
     try { 
-        
+        isManuallyRestarting = manualRestart;
+
         const dbAccounts = await getAccounts();
         const accounts = dbAccounts.recordset;
 
@@ -157,8 +160,10 @@ async function startMailboxes() {
 
             console.log('Conectado a ' + account.Email);
         }
+
+        isManuallyRestarting = false;
     } catch (error) {
-        console.log('Error obteniendo cuentas de la base de datos:', error.message);    
+        console.log('Error obteniendo cuentas de la base de datos:', error.message);
     }
 }
 

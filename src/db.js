@@ -2,6 +2,7 @@ import 'dotenv/config';
 import sql from 'mssql';
 const connect = sql.connect;
 import fs, { stat } from 'fs';
+import * as fsp from 'fs/promises';
 
 const config = {
   user: process.env.DB_USER,
@@ -14,14 +15,102 @@ const config = {
   }
 };
 
-async function getConnection() {
+const configIC = {
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  server: process.env.DB_SERVER,
+  database: process.env.CONFIG_DB_NAME,
+  options: {
+    encrypt: false, // true si usas Azure
+    trustServerCertificate: true
+  }
+};
+
+let license = {
+    Id: null,
+    Expiry: null
+}
+
+let poolPromiseData =  null;
+let poolPromiseConfig = null;
+
+async function sqlConnectData(){
+    poolPromiseData = new sql.ConnectionPool(config)
+                            .connect()
+                            .then(pool => {
+                                return pool;
+                            })
+                            .catch(err => {
+                                console.error('Error conectando a SQL Server Data:', err);
+                                throw err;
+                            });
+}
+
+async function sqlConnectConfig(){
+    poolPromiseConfig = new sql.ConnectionPool(configIC)
+                            .connect()
+                            .then(pool => {
+                                return pool;
+                            })
+                            .catch(err => {
+                                console.error('Error conectando a SQL Server Config:', err);
+                                throw err;
+                            });
+}
+
+async function getConnection(database = 'data') {
   try {
-    const pool = await connect(config);
-    return pool;
+    switch(database){
+        case 'data':
+            if(!poolPromiseData){
+                await sqlConnectData();
+            }
+            return poolPromiseData;
+        case 'config':
+            if(!poolPromiseConfig){
+                await sqlConnectConfig();
+            }
+            return poolPromiseConfig;
+        default:
+            throw new Error('Base de datos no válida');
+    }
   } catch (err) {
-    console.error("Error conectando a SQL Server:", err);
+    console.error("Error al obtener la conexión a SQL:", err);
     throw err;
   }
+}
+
+async function getLicense(){
+    try {
+        if(license.Expiry == null || license.Id < new Date()){
+            let LicenseId = await getLicenseId();
+
+            if(LicenseId != null && LicenseId != ''){
+                license.Id = LicenseId;
+            }
+            
+            let date = new Date();
+            date = date.setDate(date.getDate() + 1);
+            license.Expiry = date;
+        }
+        
+        return license.Id;
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+async function getLicenseId(){
+    try {
+        const pool = await getConnection('config');
+            const result = await pool
+            .request()
+            .query("select TOP 1 LicenseId from FacturAItorBD.dbo.License");
+
+        return result.recordset[0].LicenseId;
+    } catch (error) {
+        console.log(error);
+    }
 }
 
 async function getAccounts(){
@@ -53,21 +142,27 @@ async function putInvoicePath(DocId, path){
     }
 }
 
-async function postInvoiceData(from, mailBox){
+async function postInvoiceData(from, mailBox, situacionEspecial){
     try {
         const pool = await getConnection();
         const result = await pool
         .request()
         .input('ProveedorEmail', sql.VarChar(150), from)
         .input('Buzon', sql.VarChar(150), mailBox)
+        .input('SituacionEspecial', sql.Int, situacionEspecial)
         .output('IdDocOut', sql.Int)
         .execute('pPers_InsertaFactura');
 
         console.log('Se ha insertado la cabecera: ' + result.output.IdDocOut)
 
+        if(!result?.output?.IdDocOut){
+            return null;
+        }
+
         return result.output.IdDocOut;
     } catch (error) {
         console.log(error);
+        return null;
     }
 }
 
@@ -85,6 +180,34 @@ async function putInvoiceClaveId(DocId, ClaveId){
     }
 }
 
+async function wipeInvoiceData(invoice){
+    try {
+        if (invoice.Ruta != '') {
+            await fsp.rm(invoice.Ruta, { recursive: true, force: true });
+        }
+
+        const pool = await getConnection();
+        const result = await pool
+        .request()
+        .input('DocId', sql.Int, invoice.DocId)
+        .query('delete from DocCabeceras where DocId = @DocId');
+
+        const resultDocAI = await pool
+        .request()
+        .input('DocId', sql.Int, invoice.DocId)
+        .query('delete from DocAI where DocId = @DocId');
+
+        if(result.rowsAffected[0] == 0){
+            return false;
+        }
+
+        return true;
+    } catch (error) {
+        console.log(error);
+        return false;
+    }
+}
+
 async function getInvoiceData(DocId){
     try {
         let supplier = '';
@@ -95,7 +218,7 @@ async function getInvoiceData(DocId){
         const result = await pool
         .request()
         .input('DocId', sql.Int, DocId)
-        .query('select DocId, Ruta, ProveedorEmail, EmailBox from DocCabeceras where DocId = @DocId');
+        .query('select DocId, Ruta, ProveedorEmail, EmailBox, SituacionEspecial from DocCabeceras where DocId = @DocId');
 
         const invoice = result.recordset[0];
         invoice.Ruta = invoice.Ruta.trim();
@@ -124,8 +247,11 @@ async function getInvoiceData(DocId){
         }
 
         return {
-            Id: invoice.DocId,
+            DocId: invoice.DocId,
             Ruta: invoice.Ruta,
+            From: invoice.ProveedorEmail,
+            MailBox: invoice.EmailBox,
+            SituacionEspecial: invoice.SituacionEspecial,
             CustomerName: customer.recordset.length > 0 ? customer.recordset[0].EmpNombre.trim() : '',
             SupplierName: proveedor.recordset.length > 0 ? proveedor.recordset[0].Proveedor.trim() : '',
             CustomerNif: customer.recordset.length > 0 ? customer.recordset[0].EmpNif.trim() : '',
@@ -286,5 +412,7 @@ export {
     getJobs,
     putInvoiceClaveId, 
     getAuthorizedDomains,
-    getPermitedExtensions
+    getPermitedExtensions,
+    wipeInvoiceData,
+    getLicense
 };

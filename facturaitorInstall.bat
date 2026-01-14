@@ -149,7 +149,7 @@ call :editEnv "DB_USER" "sa"
 call :editEnv "DB_PASSWORD" "-Instalador0000"
 call :editEnv "DB_SERVER" "localhost"
 call :editEnv "DB_NAME" "Facturaitor_DataBD"
-
+call :editEnv "CONFIG_DB_NAME" "FacturAItorBD"
 
 REM ================================
 REM CREAR SERVICIO DE WINDOWS CON NSSM

@@ -1,15 +1,17 @@
 import express from 'express';
-import { sendInvoiceAI, getJobResult, getJobStatus, updateJobResult } from '../../utilities.js';
-import { getInvoiceData, getJobs, postJobData, putJobData } from '../../db.js';
+import 'dotenv/config';
+import { sendInvoiceAI, getJobResult, getJobStatus, updateJobResult, createInvoice, isDomainAuthorized, readFileBuffer } from '../../utilities.js';
+import { getInvoiceData, getJobs, postInvoiceData, postJobData, putInvoicePath, putJobData, wipeInvoiceData, getAuthorizedDomains } from '../../db.js';
 import { startMailboxes } from '../../index.js';
+import { readFile, writeFile } from 'fs/promises';
 
 const router = express.Router();
 
 router.get('/restart-accounts', async (req, res) => {
         try {
             console.log('Reiniciando las cuentas de correo')
-            startMailboxes();
-            res.status(200).json({ msg: 'Reiniciando buzones' });
+            startMailboxes(true);
+            res.status(200).json({ msg: 'Se están reiniciando los buzones' });
         } catch (err) {
             res.status(500).json({ error: err.message });
         }
@@ -24,6 +26,85 @@ router.get('/job-status', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 })
+
+router.post('/recreate-invoices', async (req, res) => {
+    try {
+        const DocIds = req.body;
+
+        const responses = [];
+
+        for(const DocIdObject of DocIds){
+            const DocId = DocIdObject.DocId;
+            console.log('Volviendo a crear la factura con DocId: ' + DocId);
+
+            const invoiceData = await getInvoiceData(DocId);
+
+            const Invoice = {
+                DocId: invoiceData.DocId,
+                ResponseAI: null
+            }
+
+            invoiceData.DocId = DocId;
+            
+            if(!invoiceData){
+                console.log('Factura no encontrada con DocId: ' + DocId);
+                Invoice.Error = 'INVOICE_NOT_FOUND';
+                responses.push(Invoice);
+                continue;
+            }
+
+            const isAuthorized = await isDomainAuthorized(invoiceData.From);
+
+            if(!isAuthorized){
+                console.log('Dominio no autorizado: ' + invoiceData.From);
+                return res.status(403).json({ error: 'Dominio del remitente no autorizado' });
+            }
+            
+            const file = await readFileBuffer(invoiceData.Ruta);
+
+            if(!file){
+                Invoice.Error = 'READFILE_ERROR';
+                console.log('Error al leer el archivo de la factura con DocId: ' + DocId);
+                responses.push(Invoice);
+                continue;
+            }
+
+            const wipeResult = await wipeInvoiceData(invoiceData);
+
+            if(!wipeResult){
+                Invoice.Error = 'WIPEINVOICEDATA_ERROR';
+                console.log('Error al wipear los datos de la factura con DocId: ' + DocId);
+                responses.push(Invoice);
+                continue;
+            }
+
+            const createResult = await createInvoice({
+                From: invoiceData.From, 
+                MailBox: invoiceData.MailBox, 
+                SituacionEspecial: null
+            }, file);
+
+            if(!createResult.DocId){
+                Invoice.Error = 'POSTINVOICEDATA_ERROR';
+                responses.push(Invoice);
+                continue;
+            }
+
+            invoiceData.DocId = createResult.DocId;
+            invoiceData.Ruta = createResult.Ruta;
+
+            const responseAI = await sendInvoiceAI(invoiceData, false);
+            Invoice.ResponseAI = responseAI;
+
+            responses.push(Invoice);
+        }
+
+        return res.status(200).json({ responses });
+    } catch (err) {
+        console.log(err)
+        res.status(500).json({ error: err.message });
+    }
+});
 
 router.get('/resend-invoice/:DocId', async (req, res) => {
     try {

@@ -1,7 +1,10 @@
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import { mkdir, readFile, writeFile } from 'fs/promises';
-import { deleteInvoiceData, getInvoiceData, putInvoicePath, postInvoiceData, postJobData, getJobs, putJobData, putInvoiceClaveId, getAuthorizedDomains, getPermitedExtensions } from './db.js';
+import { exec } from 'child_process';
+import { deleteInvoiceData, getInvoiceData, putInvoicePath, postInvoiceData, postJobData, getJobs, putJobData, putInvoiceClaveId, getAuthorizedDomains, getPermitedExtensions,
+    getLicense
+ } from './db.js';
 import axios from 'axios';
 import FormData from "form-data";
 import { fileURLToPath } from 'url';
@@ -25,7 +28,7 @@ async function fileToBase64(path) {
 
 async function deleteInvoice(invoice) {
     try {
-        deleteInvoiceData(invoice.Id);
+        deleteInvoiceData(invoice.DocId);
         if (invoice.Ruta != '') {
             await fsp.rm(invoice.Ruta, { recursive: true, force: true });
         }
@@ -35,50 +38,123 @@ async function deleteInvoice(invoice) {
 }
 
 
-async function processAttachment (attachment, from, mailBox) {
+async function processAttachment (attachment, from, mailBox, isDomainAuthorized) {
     let DocId = 0;
-    let docPath = '';
     try{
         const filename = attachment.filename;
         console.log('Procesando adjunto: ' + attachment.filename)
         
         if (filename) {
-            DocId = await postInvoiceData(from, mailBox);
 
-            if(!DocId){
-                throw new Error('No se pudo insertar el registro de la factura en la base de datos');
+            let situacionEspecial = 2;//Dominio no autorizado
+
+            console.log('situacion inicial: ' + situacionEspecial);
+            console.log('isDomainAuthorized: ' + isDomainAuthorized);
+
+            if(isDomainAuthorized){
+                situacionEspecial = null;
+                console.log('Correo autorizado: ' + from + ' se procesa normalmente. Insertando situacion especial: ' + situacionEspecial);
             }
 
-            if(process.env.DEBUG === "true"){
-                docPath = path.join(__dirname, 'temp', DocId.toString());
-                console.log('Estamos en debug y la ruta es: ' + docPath)
-            }else{
-                docPath = path.join(process.env.DOC_PATH, DocId.toString());
-                console.log('Estamos en prod y la ruta es: ' + docPath)
-            }
-            
-            await mkdir(docPath, { recursive: true });
-            const idDocPath = path.join(docPath, `DocOrigen.pdf`);
-            await writeFile(idDocPath, attachment.content);
+            console.log('Insertando, situacion especial final: ' + situacionEspecial);
 
-            const pathResult = await putInvoicePath(DocId, idDocPath);
+            const result = await createInvoice({
+                From: from, 
+                MailBox: mailBox, 
+                SituacionEspecial: situacionEspecial
+            }, attachment.content);
 
-            if(!pathResult){
-                throw new Error('No se pudo actualizar la ruta de la factura en la base de datos');
-            }
-
-            return { Id: DocId, Ruta: idDocPath};
+            return { DocId: result.DocId, Ruta: result.Ruta};
         }
     }catch(error){
         if(DocId != 0){
-            deleteInvoice({ Id: DocId, Ruta: docPath });
+            deleteInvoice({ DocId: DocId, Ruta: docPath });
         }
         throw error;
     }
 }
 
+async function createInvoice(Invoice, file){
+    const data = {
+        DocId: null,
+        Ruta: ''
+    }
+    try {
+        let DocId = await postInvoiceData(Invoice.From, Invoice.MailBox, Invoice.SituacionEspecial);
 
+        data.DocId = DocId;
 
+        if(!data.DocId){
+            return data;
+        }
+
+        if(process.env.DEBUG === "true"){
+            data.Ruta = path.join(__dirname, 'temp', DocId.toString());
+            console.log('Estamos en debug y la ruta es: ' + data.Ruta)
+        }else{
+            data.Ruta = path.join(process.env.DOC_PATH, DocId.toString());
+            console.log('Estamos en prod y la ruta es: ' + data.Ruta)
+        }
+
+        await mkdir(data.Ruta, { recursive: true });
+        const idDocPath = path.join(data.Ruta, `DocOrigen.pdf`);
+        await writeFile(idDocPath, file);
+        const pathResult = await putInvoicePath(data.DocId, idDocPath);
+
+        await givePermissions(idDocPath);
+
+        data.Ruta = idDocPath;
+        
+        if(!pathResult || pathResult?.rowsAffected[0] == 0){
+            throw new Error('No se pudo actualizar la ruta del documento en la base de datos');
+        }
+
+        return data;
+    } catch (error) {
+        console.log(error);
+
+        if(data.DocId){
+            deleteInvoice({ DocId: data.DocId, Ruta: data.Ruta });
+        }
+        return data;
+    }
+}
+
+async function givePermissions(filePath){
+    try {
+        const cmd = `icacls "${filePath}" /grant *S-1-5-32-545:F`;
+
+        exec(cmd, (err) => {
+            if (err) {
+                console.error('ACL error:', err.message);
+            }
+        });
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+async function isDomainAuthorized(from){
+    try {
+        const domainResultset = await getAuthorizedDomains()
+                
+        let parsedDomain = from.split('@')[1];
+        let isDomainAuthorized = false;
+                                            
+        for(const domain of domainResultset){
+            if(domain.Dominio.toLowerCase() == parsedDomain.toLowerCase()){
+                console.log('El dominio está autorizado: ' + parsedDomain);
+                isDomainAuthorized = true;
+                break;
+            }
+        }
+
+        return isDomainAuthorized;
+    } catch (error) {
+        console.log(error);
+        return false;
+    }
+}
 
 function removeInsertedInvoices(inserted){
     try {
@@ -141,12 +217,25 @@ async function markUnseen(imap, seqno) {
     }
 }
 
+async function readFileBuffer(filePath){
+    try {
+        const file = await readFile(filePath);
+        return file;
+    } catch (error) {
+        return false;
+    }
+}
+
 async function sendInvoiceAI(invoice, isRescan = false){
     try {
-        let IdEmpotencyKey = `${Date.now()}-${invoice.Id}`;
+        let IdEmpotencyKey = `${Date.now()}-${invoice.DocId}`;
+        console.log(invoice);
+
+        let licenseId = await getLicense();
+        console.log('LicenseId obtenida: ' + licenseId);
 
         let data = new FormData();
-        data.append('id', `${invoice.Id}`);
+        data.append('id', `${invoice.DocId}`);
         data.append('file', fs.createReadStream(invoice.Ruta));
         data.append('webhook_url', `${process.env.API_PUBLICA}/v1/job-reply` ?? '');
         data.append('webhook_secret', 'a');
@@ -161,7 +250,8 @@ async function sendInvoiceAI(invoice, isRescan = false){
              },
             "handlesProjects": invoice.handlesProjects ?? false,
             "type": invoice.type ?? 'creditor',
-            "rescan": isRescan
+            "rescan": isRescan,
+            "licenseId": licenseId ?? ''
         }));
 
 
@@ -185,8 +275,10 @@ async function sendInvoiceAI(invoice, isRescan = false){
                 return false;
         }
 
-        const result = await postJobData(response.data.job_id, IdEmpotencyKey, response.data.status, invoice.Id)
-        const resultClaveId = await putInvoiceClaveId(invoice.Id, IdEmpotencyKey);
+        console.log(response.data);
+
+        const result = await postJobData(response.data.job_id, IdEmpotencyKey, response.data.status, invoice.DocId)
+        const resultClaveId = await putInvoiceClaveId(invoice.DocId, IdEmpotencyKey);
 
         if(!result){
             console.log('No se pudo insertar el jobid en la base de datos');
@@ -202,6 +294,7 @@ async function sendInvoiceAI(invoice, isRescan = false){
     } catch (error) {
         console.log('Error enviando la factura a AI:');
         console.log(error)
+        return false;
     }
 }
 
@@ -359,15 +452,11 @@ async function fetchMails(fetch, imap, account){
                                             }
 
 
-                                            const domainResultset = await getAuthorizedDomains()
                                             const extResultset = await getPermitedExtensions()
+                                            const from = parsed.from.value[0].address;
+                                            let isAuthorized = await isDomainAuthorized(from);
 
-                                            
-
-                                            if(!domainResultset.find(domain => parsed.from.value[0].address.toLocaleLowerCase().endsWith(`@${domain.Dominio.toLowerCase()}`))){
-                                                console.log('Mail de dominio no autorizado, saltando procesamiento.');
-                                                return;
-                                            }
+                                            console.log('¿Dominio autorizado? ' + isAuthorized);
 
                                             if (parsed.attachments && parsed.attachments.length > 0) {
                                                 const inserted = [];
@@ -397,13 +486,13 @@ async function fetchMails(fetch, imap, account){
                                                         continue;
                                                     }
 
-                                                    const invoice = await processAttachment(file, parsed.from.value[0].address, account.user)
+                                                    const invoice = await processAttachment(file, from, account.user, isAuthorized)
                                                                         .catch(err => {
                                                                                 console.error('Error procesando adjunto:', err.message);
                                                                                 errored = true;
-                                                                            });
+                                                                        });
                                                     
-                                                    if(invoice && invoice.Id){
+                                                    if(invoice && invoice.DocId){
                                                         inserted.push(invoice);   
                                                     }
                                                 }
@@ -412,11 +501,14 @@ async function fetchMails(fetch, imap, account){
                                                     removeInsertedInvoices(inserted);
                                                     moveToErrorBox(imap, seqno);
                                                     console.log('Error procesando adjuntos, moviendo correo a REVISAR');
+                                                }else if(!isAuthorized){
+                                                    markSeen(imap, seqno);
+                                                    console.log('Dominio no autorizado, marcando correo como leído sin enviar a IA.');
                                                 }else{
                                                     let result = []
                                                     
                                                     for(const insertedInvoice of inserted){
-                                                        const data = await getInvoiceData(insertedInvoice.Id);
+                                                        const data = await getInvoiceData(insertedInvoice.DocId);
 
                                                         if(!data){
                                                             result.push(false);
@@ -465,5 +557,8 @@ export {
     fetchMails,
     startFetchInterval,
     markUnseen,
-    sendHealthCheckAI
+    sendHealthCheckAI,
+    readFileBuffer,
+    createInvoice,
+    isDomainAuthorized,
 };
