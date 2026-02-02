@@ -16,12 +16,11 @@ import { clearInterval } from 'timers';
 const activeConnections = [];
 let isManuallyRestarting = false;
 
-
-
 function prepareBox(account){
     const imap = new Imap(account);
     activeConnections.push(imap);
     
+    //Vuelve a montar el buzón
     const reconnect = () => {
         console.log(`Reconectando a ${account.user} en 10 segundos...`);
         setTimeout(() => prepareBox(account), 10000);
@@ -36,9 +35,8 @@ function prepareBox(account){
             imap.openBox('INBOX', false, function (err, box) {
                 if (err) throw err;
 
+                // Inicia el intervalo de fetch para revisar nuevos correos periódicamente
                 fetchInterval = startFetchInterval(imap, account);
-
-
             });
         } catch (error) {
             console.error('Error en la bandeja de entrada inbox:', error.message);
@@ -58,7 +56,6 @@ function prepareBox(account){
                                 console.error('Error al buscar correos no leídos:', err.message);
                                 return;
                             }
-
 
                             if (!results || results.length === 0) {
                                 console.log('No hay nuevos correos');
@@ -81,14 +78,12 @@ function prepareBox(account){
                         })
     });
 
+    // Este es el evento que se dispara cuando la conexión IMAP se cierra del TODO(el último que se ejecuta)
     imap.once('close', function (err) {
         console.log('Conexión IMAP cerrada: ', err);
-        imap.removeAllListeners();
 
-        /*let index = activeConnections.indexOf(imap);
-        if (index > -1) {
-            activeConnections.splice(index, 1);
-        }*/
+        // Elimina los listeners para evitar múltiples reconexiones
+        imap.removeAllListeners();
 
         if(fetchInterval != null){
             clearInterval(fetchInterval);
@@ -112,8 +107,6 @@ function prepareBox(account){
         console.log('Conexión IMAP terminada');
         
     });
-    
-    console.log("Listeners:", imap.listenerCount("mail"), imap.listenerCount("message"));
 
     imap.connect();
 }
@@ -122,6 +115,7 @@ function prepareBox(account){
 
 async function startMailboxes(manualRestart = false) {
     try { 
+        //Evitamos que se instancien 2 listeners de correo si se está haciendo un reinicio manual
         isManuallyRestarting = manualRestart;
 
         const dbAccounts = await getAccounts();
@@ -135,10 +129,13 @@ async function startMailboxes(manualRestart = false) {
                     console.log('Estado antes de cerrar:' + mb.state);
                     console.log('Cerrando bandeja de ' + mb._config.user);
 
+                    // Termina la conexión IMAP
                     mb.end();
 
                     console.log('Estado despues de cerrar:' + mb.state);
                     
+                    // Espera hasta que la conexión IMAP esté completamente cerrada
+                    // Evita errores al intentar reconectar demasiado rápido
                     while(mb.state == 'authenticated' || mb.state == 'connecting' || mb.state == 'connected') {
                         await new Promise(resolve => setTimeout(resolve, 1000));
                         console.log('El estado sigue siendo activo, esperando a que se cierre...' + mb.state);
@@ -159,7 +156,6 @@ async function startMailboxes(manualRestart = false) {
                 port: account.Port,
                 tls: account.TLS,
                 tlsOptions: { rejectUnauthorized: false },
-                //Después de problemas y comerme la cabeza durante horas, esto da una sarta de problemas interesante. 
                 //Al usar esta parte del objeto, lo estás configurando para que nunca se duerma(lo que podría parecer interesante desde un principio
                 //ya que se supone que debería ayudar a que no se desconecte el servicio del host de mail, pues no, rompe el IDLE, un protocolo 
                 //necesario para que los eventos funcionen y el host envíe las notificaciones a la APP)

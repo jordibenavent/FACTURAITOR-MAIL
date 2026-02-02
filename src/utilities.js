@@ -3,16 +3,14 @@ import * as fsp from 'fs/promises';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { exec } from 'child_process';
 import { deleteInvoiceData, getInvoiceData, putInvoicePath, postInvoiceData, postJobData, getJobs, putJobData, putInvoiceClaveId, getAuthorizedDomains, getPermitedExtensions,
-    getLicense
+    getLicense,
  } from './db.js';
 import axios from 'axios';
 import FormData from "form-data";
 import { fileURLToPath } from 'url';
 import { simpleParser } from 'mailparser';
 import path, { parse } from 'path';
-import qs from 'qs';
 import 'dotenv/config';
-import c from 'config';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,27 +44,26 @@ async function processAttachment (attachment, from, mailBox, isDomainAuthorized)
         
         if (filename) {
 
-            let situacionEspecial = 2;//Dominio no autorizado
-
-            console.log('situacion inicial: ' + situacionEspecial);
-            console.log('isDomainAuthorized: ' + isDomainAuthorized);
+            let situacionEspecial = 2;//Dominio no autorizado = 2
 
             if(isDomainAuthorized){
                 situacionEspecial = null;
-                console.log('Correo autorizado: ' + from + ' se procesa normalmente. Insertando situacion especial: ' + situacionEspecial);
             }
 
             console.log('Insertando, situacion especial final: ' + situacionEspecial);
 
-            const result = await createInvoice({
+            const Invoice = {
                 From: from, 
                 MailBox: mailBox, 
                 SituacionEspecial: situacionEspecial
-            }, attachment.content);
+            }
+
+            const result = await createInvoice(Invoice, attachment.content);
 
             return { DocId: result.DocId, Ruta: result.Ruta};
         }
     }catch(error){
+        // Si hay algún error elimina tanto los ficheros como la entrada en la base de datos
         if(DocId != 0){
             deleteInvoice({ DocId: DocId, Ruta: docPath });
         }
@@ -80,20 +77,19 @@ async function createInvoice(Invoice, file){
         Ruta: ''
     }
     try {
-        let DocId = await postInvoiceData(Invoice.From, Invoice.MailBox, Invoice.SituacionEspecial);
-
-        data.DocId = DocId;
+        // Crear entrada en la base de datos y obtener el DocId
+        data.DocId = await postInvoiceData(Invoice.From, Invoice.MailBox, Invoice.SituacionEspecial);
 
         if(!data.DocId){
             return data;
         }
 
         if(process.env.DEBUG === "true"){
-            data.Ruta = path.join(__dirname, 'temp', DocId.toString());
-            console.log('Estamos en debug y la ruta es: ' + data.Ruta)
+            //Guardar en carpeta temp dentro del src para debug
+            data.Ruta = path.join(__dirname, 'temp', data.DocId.toString());
         }else{
-            data.Ruta = path.join(process.env.DOC_PATH, DocId.toString());
-            console.log('Estamos en prod y la ruta es: ' + data.Ruta)
+            //Guardar en la carpeta de documentos flexy definida en las variables de entorno
+            data.Ruta = path.join(process.env.DOC_PATH, data.DocId.toString());
         }
 
         await mkdir(data.Ruta, { recursive: true });
@@ -101,6 +97,7 @@ async function createInvoice(Invoice, file){
         await writeFile(idDocPath, file);
         const pathResult = await putInvoicePath(data.DocId, idDocPath);
 
+        // Dar permisos de escritura a todos los usuarios en Windows para evitar errores en flexygo
         await givePermissions(idDocPath);
 
         data.Ruta = idDocPath;
@@ -411,8 +408,6 @@ function startFetchInterval(imap, account){
                     if (results.length === 0) {
                         return;
                     }
-                    
-
 
                     if(!sendHealthCheckAI()){
                         console.log('IA Sin servicio. Se pospone el procesamiento de correos.');
@@ -451,7 +446,7 @@ async function fetchMails(fetch, imap, account){
                                                 return;
                                             }
 
-
+                                            // Obtener las extensiones y dominios permitidos
                                             const extResultset = await getPermitedExtensions()
                                             const from = parsed.from.value[0].address;
                                             let isAuthorized = await isDomainAuthorized(from);
@@ -486,17 +481,20 @@ async function fetchMails(fetch, imap, account){
                                                         continue;
                                                     }
 
+                                                    // Procesar el adjunto
                                                     const invoice = await processAttachment(file, from, account.user, isAuthorized)
                                                                         .catch(err => {
                                                                                 console.error('Error procesando adjunto:', err.message);
                                                                                 errored = true;
                                                                         });
                                                     
+                                                    // Guardar la factura insertada para posibles eliminaciones posteriores si hay errores
                                                     if(invoice && invoice.DocId){
                                                         inserted.push(invoice);   
                                                     }
                                                 }
 
+                                                // Gestión de errores y estados finales
                                                 if(errored){
                                                     removeInsertedInvoices(inserted);
                                                     moveToErrorBox(imap, seqno);
@@ -507,6 +505,8 @@ async function fetchMails(fetch, imap, account){
                                                 }else{
                                                     let result = []
                                                     
+                                                    // Aquí se hacen muchas comprobaciones pero son necesarias.
+                                                    // La idea es que si hay un error en el envío a la IA, no se gestionen los correos.
                                                     for(const insertedInvoice of inserted){
                                                         const data = await getInvoiceData(insertedInvoice.DocId);
 

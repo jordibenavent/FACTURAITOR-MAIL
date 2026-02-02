@@ -4,6 +4,7 @@ const connect = sql.connect;
 import fs, { stat } from 'fs';
 import * as fsp from 'fs/promises';
 
+// Configuración de la conexión a la base de datos de datos
 const config = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
@@ -15,6 +16,7 @@ const config = {
   }
 };
 
+// Configuración de la conexión a la base de datos de configuración
 const configIC = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
@@ -34,6 +36,7 @@ let license = {
 let poolPromiseData =  null;
 let poolPromiseConfig = null;
 
+//NO USAR, ESTO SE MANEJA EN getConnection
 async function sqlConnectData(){
     poolPromiseData = new sql.ConnectionPool(config)
                             .connect()
@@ -46,6 +49,7 @@ async function sqlConnectData(){
                             });
 }
 
+//NO USAR, ESTO SE MANEJA EN getConnection
 async function sqlConnectConfig(){
     poolPromiseConfig = new sql.ConnectionPool(configIC)
                             .connect()
@@ -58,6 +62,9 @@ async function sqlConnectConfig(){
                             });
 }
 
+// Esto es lo que se usa para obtener la conexión a la base de datos.
+// Si no se le pasa parámetro, conecta a la base de datos de datos por defecto.
+// Si se le pasa 'config', conecta a la base de datos de configuración.
 async function getConnection(database = 'data') {
   try {
     switch(database){
@@ -80,6 +87,7 @@ async function getConnection(database = 'data') {
   }
 }
 
+//Maneja la obtención de la licencia, con caché de 1 día, se envía a la IA para que controle si se permite usar el servicio o no.
 async function getLicense(){
     try {
         if(license.Expiry == null || license.Id < new Date()){
@@ -113,6 +121,7 @@ async function getLicenseId(){
     }
 }
 
+//Obtiene los buzones
 async function getAccounts(){
     try {
         
@@ -127,6 +136,7 @@ async function getAccounts(){
     }
 }
 
+//Pone la ruta del fichero de la factura una vez se ha devuelto el DocId al crear la factura
 async function putInvoicePath(DocId, path){
     try {
         const pool = await getConnection();
@@ -142,6 +152,7 @@ async function putInvoicePath(DocId, path){
     }
 }
 
+//Crea la factura en la base de datos, devuelve el DocId
 async function postInvoiceData(from, mailBox, situacionEspecial){
     try {
         const pool = await getConnection();
@@ -166,6 +177,7 @@ async function postInvoiceData(from, mailBox, situacionEspecial){
     }
 }
 
+
 async function putInvoiceClaveId(DocId, ClaveId){
     try {
         const pool = await getConnection();
@@ -180,6 +192,7 @@ async function putInvoiceClaveId(DocId, ClaveId){
     }
 }
 
+//Wipea los datos de la factura, tanto el fichero como la base de datos, como si no hubiera existido.
 async function wipeInvoiceData(invoice){
     try {
         if (invoice.Ruta != '') {
@@ -208,6 +221,7 @@ async function wipeInvoiceData(invoice){
     }
 }
 
+//Obtiene los datos de la factura
 async function getInvoiceData(DocId){
     try {
         let supplier = '';
@@ -232,7 +246,7 @@ async function getInvoiceData(DocId){
         .input('E_mail', sql.VarChar(150), invoice.ProveedorEmail)
         .query('select TOP 1 Proveedor, Nif, FacturasAcreedor from ProvDatos where E_Mail = @E_mail order by IdProveedor Desc');
 
-        //TODO leer archivo de la ruta para ver si no está vacío y no enviar algo que de error y evite fallos
+        //TODO: leer archivo de la ruta para ver si no está vacío y no enviar algo que de error y evite fallos
 
         if(proveedor.recordset.length > 0){
             console.log(proveedor.recordset[0].FacturasAcreedor);
@@ -263,6 +277,7 @@ async function getInvoiceData(DocId){
         console.log(error);
     }
 }
+
 
 async function deleteInvoiceData(DocId){
     try {
@@ -317,6 +332,21 @@ async function postJobData(JobId, IdEmpotencyKey, Status, DocId){
         return result;
     } catch (error) {
         console.log(error);
+    }
+}
+
+async function postTempProveedorData(DocId, Remitente){
+    try {
+        const pool = await getConnection();
+        const result = await pool
+        .request()
+        .input('DocId', sql.Int, DocId)
+        .input('Remitente', sql.VarChar(50), Remitente)
+        .query(`insert into Temp_ProvPendientesAI (DocId, Remitente) values (@DocId, @Remitente)`);
+
+        return result;
+    } catch (error) {
+        console.log(error)
     }
 }
 
@@ -414,5 +444,6 @@ export {
     getAuthorizedDomains,
     getPermitedExtensions,
     wipeInvoiceData,
-    getLicense
+    getLicense, 
+    postTempProveedorData
 };

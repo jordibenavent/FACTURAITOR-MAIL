@@ -1,9 +1,8 @@
 import express from 'express';
 import 'dotenv/config';
 import { sendInvoiceAI, getJobResult, getJobStatus, updateJobResult, createInvoice, isDomainAuthorized, readFileBuffer } from '../../utilities.js';
-import { getInvoiceData, getJobs, postInvoiceData, postJobData, putInvoicePath, putJobData, wipeInvoiceData, getAuthorizedDomains } from '../../db.js';
+import { getInvoiceData, getJobs, postInvoiceData, postJobData, putInvoicePath, putJobData, wipeInvoiceData, getAuthorizedDomains, postTempProveedorData } from '../../db.js';
 import { startMailboxes } from '../../index.js';
-import { readFile, writeFile } from 'fs/promises';
 
 const router = express.Router();
 
@@ -95,8 +94,13 @@ router.post('/recreate-invoices', async (req, res) => {
 
             const responseAI = await sendInvoiceAI(invoiceData, false);
             Invoice.ResponseAI = responseAI;
+            Invoice.DocId = invoiceData.DocId;
 
             responses.push(Invoice);
+
+            //Inserta en tabla temporal un registro para que luego en flexy un cron job lea los datos de la IA y cree el proveedor si no existe.
+            //Esto solo se hace cuando no existía el dominio autorizado previamente.
+            postTempProveedorData(invoiceData.DocId, invoiceData.From.split('@')[1]);
         }
 
         return res.status(200).json({ responses });
@@ -106,6 +110,7 @@ router.post('/recreate-invoices', async (req, res) => {
     }
 });
 
+//Por ahora esta API no se usa.
 router.get('/resend-invoice/:DocId', async (req, res) => {
     try {
         const { DocId } = req.params;
@@ -132,6 +137,7 @@ router.get('/resend-invoice/:DocId', async (req, res) => {
     }
 });
 
+//Punto de entrada de lo que devuelve la IA
 router.post('/job-reply', async (req, res) => {
     try {
         console.log('Nueva entrada en /job-reply');

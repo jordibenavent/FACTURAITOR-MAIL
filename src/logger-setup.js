@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { __dirname }   from './utilities.js';
 
-
+//Esto es la config de pino, logger de la app, recoge los console.log y los almacena en la carpeta logs
 const isDev = process.env.NODE_ENV !== "production";
 const logsDir = path.join(__dirname, "logs");
 
