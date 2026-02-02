@@ -182,7 +182,7 @@ async function startMailboxes(manualRestart = false) {
 
 try {
     startMailboxes();
-    startApi(process.env.APP_PUERTO);
+    startApi(process.env.APP_PORT || 5000);
 } catch (error) {
     console.log('Error iniciando app:', error.message);
 }
