@@ -156,6 +156,7 @@ async function startMailboxes(manualRestart = false) {
                 port: account.Port,
                 tls: account.TLS,
                 tlsOptions: { rejectUnauthorized: false },
+                //La documentacion, web npm node-imap
                 //Al usar esta parte del objeto, lo estás configurando para que nunca se duerma(lo que podría parecer interesante desde un principio
                 //ya que se supone que debería ayudar a que no se desconecte el servicio del host de mail, pues no, rompe el IDLE, un protocolo 
                 //necesario para que los eventos funcionen y el host envíe las notificaciones a la APP)

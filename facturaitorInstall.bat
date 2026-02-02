@@ -132,7 +132,7 @@ if not exist "%ENV_FILE%" (
     (
         echo AIHOST="http://44.198.229.9:8000"
         echo API_PUBLICA="http://localhost:5000"
-        echo APP_PUERTO="5000"
+        echo APP_PORT="5000"
         echo DOC_PATH="C:\FacturAItor\FacturAItorApp\FacturAItor\custom\documents\"
         echo DB_USER="sa"
         echo DB_PASSWORD="-Instalador0000"
@@ -143,7 +143,6 @@ if not exist "%ENV_FILE%" (
 )
 
 call :editEnv "API_PUBLICA" "http://localhost:5000"
-call :editEnv "APP_PUERTO" "5000"
 call :editEnv "DOC_PATH" "C:\FacturAItor\FacturAItorApp\FacturAItor\custom\documents\"
 call :editEnv "DB_USER" "sa"
 call :editEnv "DB_PASSWORD" "-Instalador0000"

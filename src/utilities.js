@@ -560,5 +560,5 @@ export {
     sendHealthCheckAI,
     readFileBuffer,
     createInvoice,
-    isDomainAuthorized,
+    isDomainAuthorized
 };

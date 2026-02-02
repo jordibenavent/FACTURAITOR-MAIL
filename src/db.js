@@ -113,7 +113,7 @@ async function getLicenseId(){
         const pool = await getConnection('config');
             const result = await pool
             .request()
-            .query("select TOP 1 LicenseId from FacturAItorBD.dbo.License");
+            .query("select TOP 1 LicenseId from License");
 
         return result.recordset[0].LicenseId;
     } catch (error) {

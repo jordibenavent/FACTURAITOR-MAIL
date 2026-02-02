@@ -1,13 +1,20 @@
 import express from 'express';
 import 'dotenv/config';
 import { sendInvoiceAI, getJobResult, getJobStatus, updateJobResult, createInvoice, isDomainAuthorized, readFileBuffer } from '../../utilities.js';
-import { getInvoiceData, getJobs, postInvoiceData, postJobData, putInvoicePath, putJobData, wipeInvoiceData, getAuthorizedDomains, postTempProveedorData } from '../../db.js';
+import { getInvoiceData, getJobs, postInvoiceData, postJobData, putInvoicePath, putJobData, wipeInvoiceData, getAuthorizedDomains, postTempProveedorData, getLicense } from '../../db.js';
 import { startMailboxes } from '../../index.js';
 
 const router = express.Router();
 
 router.get('/restart-accounts', async (req, res) => {
         try {
+            
+            const isAuthorized = await checkAuthorityAPI();
+
+            if(!isAuthorized){
+                return res.status(403).json({ error: 'Licencia inválida' });
+            }
+
             console.log('Reiniciando las cuentas de correo')
             startMailboxes(true);
             res.status(200).json({ msg: 'Se están reiniciando los buzones' });
