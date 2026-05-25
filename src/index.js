@@ -104,6 +104,7 @@ function prepareBox(account){
     });
 
 
+
     imap.once('end', function () {
         console.log('Conexión IMAP terminada');
         

@@ -1,0 +1,164 @@
+﻿diff --git a/.env.base b/.env.base
+deleted file mode 100644
+index ae853af..0000000
+--- a/.env.base
++++ /dev/null
+@@ -1,11 +0,0 @@
+-API_PUBLICA=
+-AIHOST='http://44.198.229.9:8000'
+-WEBHOOK_URL='/v1/job-reply'
+-DOC_PATH=
+-DB_USER=
+-DB_PASSWORD=
+-DB_SERVER="localhost"
+-DB_NAME="Facturaltor_DataBD"
+-CONFIG_DB_NAME="FacturAItorBD"
+-DEBUG='false'
+-APP_PORT=5000
+\ No newline at end of file
+diff --git a/.vscode/launch.json b/.vscode/launch.json
+new file mode 100644
+index 0000000..33694dd
+--- /dev/null
++++ b/.vscode/launch.json
+@@ -0,0 +1,18 @@
++{
++    // Use IntelliSense para saber los atributos posibles.
++    // Mantenga el puntero para ver las descripciones de los existentes atributos.
++    // Para m├ís informaci├│n, visite: https://go.microsoft.com/fwlink/?linkid=830387
++    //"request": "attach" ÔåÆ le dice a VS Code que se conecte a un Node ya arrancado.   
++    //"port": 9229 ÔåÆ es el puerto donde Node te est├í diciendo que escucha.
++    //"restart": true ÔåÆ viene bien con nodemon, porque cuando reinicia la app, VS Code intenta seguir
++ "version": "0.2.0",
++  "configurations": [
++    {
++      "type": "node",
++      "request": "attach",
++      "name": "Adjuntar a Node en 9229",
++      "port": 9229,
++      "restart": true
++    }
++  ]
++}
+\ No newline at end of file
+diff --git a/package.json b/package.json
+index 6e2f3d5..413983a 100644
+--- a/package.json
++++ b/package.json
+@@ -4,6 +4,7 @@
+   "version": "1.0.0",
+   "main": "src/index.js",
+   "scripts": {
++	"start": "node --env-file=.env src/index.js",
+     "test": "echo \"Error: no test specified\" && exit 1"
+   },
+   "author": "",
+diff --git a/src/api/v1/v1.js b/src/api/v1/v1.js
+index 80ddc60..8b93fe1 100644
+--- a/src/api/v1/v1.js
++++ b/src/api/v1/v1.js
+@@ -9,11 +9,12 @@ const router = express.Router();
+ router.get('/restart-accounts', async (req, res) => {
+         try {
+             
+-            const isAuthorized = await checkAuthorityAPI();
+-
+-            if(!isAuthorized){
+-                return res.status(403).json({ error: 'Licencia inv├ílida' });
+-            }
++            // PENDIENTE: checkAuthorityAPI() est├í llamada aqu├¡ pero no est├í definida ni importada en ning├║n sitio del proyecto.
++            // Comentado para que el endpoint funcione hasta que se implemente la validaci├│n de licencia.
++            // const isAuthorized = await checkAuthorityAPI();
++            // if(!isAuthorized){
++            //     return res.status(403).json({ error: 'Licencia inv├ílida' });
++            // }
+ 
+             console.log('Reiniciando las cuentas de correo')
+             startMailboxes(true);
+diff --git a/src/index.js b/src/index.js
+index a205aed..e5e3aeb 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -63,13 +63,13 @@ function prepareBox(account){
+                             }
+ 
+                             console.log('Nuevos correos detectados con el evento, procesando...');
+-
++                            //cambia el estado de los mensajes a leidos. Result tiene un array con las posici├│n de los mensajes
+                             const fetch = imap.seq.fetch(results, {
+                                 bodies: '',
+                                 struct: true,
+                                 markSeen: true
+                             });
+-
++                            //Funci├│n que recorre y procesa los mensajes
+                             await fetchMails(fetch, imap, account);
+ 
+                             fetch.on('error', function (err) {
+@@ -91,8 +91,8 @@ function prepareBox(account){
+         }
+ 
+         if(!isManuallyRestarting){
+-            console.log('Estado IMAP:' + imap.state);
+-            console.log('No es desconexi├│n manual, reconectando...');
++            //console.log('Estado IMAP:' + imap.state);
++            //console.log('No es desconexi├│n manual, reconectando...');
+             reconnect();
+         }
+     });
+@@ -100,9 +100,10 @@ function prepareBox(account){
+     imap.on("alert", (error) => console.log("IMAP alert:", error));
+ 
+     imap.once('error', function (err) {
+-        console.error('Error en IMAP:', err);
++        console.error('ÔØî ERROR IMAP PROYECTO:', err && err.message ? err.message : err);
+     });
+ 
++
+     imap.once('end', function () {
+         console.log('Conexi├│n IMAP terminada');
+         
+@@ -155,7 +156,16 @@ async function startMailboxes(manualRestart = false) {
+                 host: account.Host,
+                 port: account.Port,
+                 tls: account.TLS,
++                // user: 'suppliers_sp@aciertapps.com',
++                // password: '-Acierta2026*',
++                // host: 'imap.ionos.es',
++                // port: 993,
++                // tls: true,
+                 tlsOptions: { rejectUnauthorized: false },
++                connTimeout: 10000,
++                authTimeout: 10000,
++                // debug: (msg) => console.log(`[IMAP DEBUG][PROYECTO] ${msg.trim()}`)
++
+                 //La documentacion, web npm node-imap
+                 //Al usar esta parte del objeto, lo est├ís configurando para que nunca se duerma(lo que podr├¡a parecer interesante desde un principio
+                 //ya que se supone que deber├¡a ayudar a que no se desconecte el servicio del host de mail, pues no, rompe el IDLE, un protocolo 
+diff --git a/src/utilities.js b/src/utilities.js
+index f0032c4..110925a 100644
+--- a/src/utilities.js
++++ b/src/utilities.js
+@@ -433,8 +433,12 @@ function startFetchInterval(imap, account){
+ 
+ async function fetchMails(fetch, imap, account){
+     try {
+-        fetch.once('message', function (msg, seqno) {
+-                                msg.once('body', function (stream) {
++        //fetch.once('message', function (msg, seqno) { //solo procesa el primer correo y los demas no los procesa, esto presenta una incidencia.
++        fetch.on('message', function (msg, seqno) { //procesa todos los correos
++            console.log('­ƒô® Procesando seqno:', seqno);
++                                //msg.once('body', function (stream) { // solo procesa el primero
++                                msg.on('body', function (stream) {
++                                    console.log('   Ô£à body recibido para seqno:', seqno);
+                                     simpleParser(stream, async (err, parsed) => {
+                                         try{
+                                             console.log('Leyendo cuerpo del correo.')
+@@ -449,6 +453,7 @@ async function fetchMails(fetch, imap, account){
+                                             // Obtener las extensiones y dominios permitidos
+                                             const extResultset = await getPermitedExtensions()
+                                             const from = parsed.from.value[0].address;
++                                            //revisa si el dominio es autorizado.
+                                             let isAuthorized = await isDomainAuthorized(from);
+ 
+                                             console.log('┬┐Dominio autorizado? ' + isAuthorized);
