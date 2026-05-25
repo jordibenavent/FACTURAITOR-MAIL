@@ -1,0 +1,7 @@
+/node_modules
+/.env
+/.env.base
+/src/temp
+/jsflexy1.js
+/src/logs
+/setup_log.txt

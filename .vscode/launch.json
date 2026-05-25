@@ -1,0 +1,18 @@
+{
+    // Use IntelliSense para saber los atributos posibles.
+    // Mantenga el puntero para ver las descripciones de los existentes atributos.
+    // Para más información, visite: https://go.microsoft.com/fwlink/?linkid=830387
+    //"request": "attach" → le dice a VS Code que se conecte a un Node ya arrancado.   
+    //"port": 9229 → es el puerto donde Node te está diciendo que escucha.
+    //"restart": true → viene bien con nodemon, porque cuando reinicia la app, VS Code intenta seguir
+ "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "attach",
+      "name": "Adjuntar a Node en 9229",
+      "port": 9229,
+      "restart": true
+    }
+  ]
+}
