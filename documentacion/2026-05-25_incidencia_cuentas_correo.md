@@ -73,13 +73,34 @@ Aunque se corrigiera el puerto, el endpoint `/v1/restart-accounts` en `src/api/v
 
 ## Otros hallazgos durante el análisis
 
-- El script de instalación `scriptsInstalacion/iis.ps1` configura el proxy IIS apuntando al puerto 5000. En instalaciones donde se use el puerto 6000 hay que actualizar manualmente el `web.config` o el script de instalación.
+- El script de instalación `scriptsInstalacion/iis.ps1` configuraba el proxy IIS apuntando siempre al puerto 5000 sin posibilidad de cambiarlo. **Corregido** (ver sección mejoras del instalador).
 - La variable `APP_PORT` del archivo `.env` define el puerto de Node.js para cada instalación. Tenerla en cuenta al instalar en nuevos servidores.
+
+---
+
+## Mejoras aplicadas al instalador (26/05/2026)
+
+Durante el análisis de la incidencia se detectó que el instalador `facturaitorInstall.bat` tenía el puerto 5000 hardcodeado en tres sitios, lo que causaba fallos en servidores donde ese puerto estaba ocupado. Se corrigió el instalador con la siguiente lógica:
+
+**Nuevo flujo del instalador:**
+1. Si ya existe el archivo `.env` → avisa que la aplicación ya está instalada y cancela para no sobreescribir la configuración del cliente.
+2. Comprueba si el puerto 5000 está libre.
+3. Si está ocupado → pide al usuario otro puerto y lo valida hasta encontrar uno libre.
+4. Crea el `.env` con `APP_PORT` y `API_PUBLICA` usando el puerto validado automáticamente.
+5. Llama a `iis.ps1` pasándole el puerto como parámetro.
+
+**Ficheros modificados:**
+- `facturaitorInstall.bat` — lógica de detección y validación de puerto
+- `scriptsInstalacion/iis.ps1` — acepta el puerto como parámetro `-Port` en lugar de tenerlo fijo
 
 ---
 
 ## Cambios subidos a GitHub
 
-Commit: `merge: resolver conflictos manteniendo version local con fixes aplicados`  
+| Fecha | Commit | Descripción |
+|-------|--------|-------------|
+| 25/05/2026 | `merge: resolver conflictos manteniendo version local con fixes aplicados` | Fix checkAuthorityAPI y mejoras Node.js |
+| 26/05/2026 | `fix: instalador detecta puerto en uso y configura IIS dinamicamente` | Mejoras en el instalador |
+
 Repositorio: https://github.com/jordibenavent/FACTURAITOR-MAIL.git  
 Rama: `main`
