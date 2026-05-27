@@ -145,6 +145,15 @@ echo.
 echo Instalando dependencias del proyecto...
 cd /d "%PROJECT_DIR%"
 call npm install >> "%LOG_FILE%" 2>&1
+if %errorlevel% neq 0 (
+    echo.
+    echo =========================================
+    echo ERROR: npm install fallo.
+    echo Revisa el archivo setup_log.txt para ver los detalles.
+    echo =========================================
+    pause
+    exit /b 1
+)
 echo Dependencias instaladas.
 
 
@@ -181,6 +190,59 @@ call :editEnv "CONFIG_DB_NAME" "FacturAItorBD"
 
 
 REM ================================
+REM VERIFICAR SQL SERVER BROWSER
+REM Las instancias SQL con nombre (ej: servidor\instancia) requieren
+REM que SQL Server Browser esté activo para resolver el nombre de instancia.
+REM Si no está corriendo la conexión falla con un error confuso.
+REM ================================
+set "DB_SERVER_VAL="
+for /f "usebackq tokens=1,* delims==" %%A in ("%ENV_FILE%") do (
+    if /i "%%A"=="DB_SERVER" set "DB_SERVER_VAL=%%B"
+)
+set DB_SERVER_VAL=%DB_SERVER_VAL:"=%
+
+echo %DB_SERVER_VAL% | findstr /C:"\" >nul 2>&1
+if %errorlevel%==0 (
+    echo.
+    echo Instancia SQL con nombre detectada (%DB_SERVER_VAL%).
+    echo Verificando SQL Server Browser...
+    powershell -NoProfile -Command ^
+        "$svc=Get-Service -Name 'SQLBrowser' -ErrorAction SilentlyContinue;" ^
+        "if($null -eq $svc){Write-Host 'AVISO: SQL Server Browser no esta instalado. Las instancias con nombre pueden no conectar.'}" ^
+        "elseif($svc.Status -ne 'Running'){Write-Host 'SQL Server Browser detenido. Iniciando...'; Start-Service SQLBrowser; Set-Service SQLBrowser -StartupType Automatic; Write-Host 'SQL Server Browser iniciado y configurado como automatico.'}" ^
+        "else{Write-Host 'SQL Server Browser en ejecucion. OK.'}"
+)
+
+
+REM ================================
+REM CONFIGURAR PUERTO EN BASE DE DATOS
+REM Inserta o actualiza el parámetro PuertoIIS en la tabla Configuracion
+REM para que el procedimiento pPers_ReiniciarCuentas sepa a qué puerto
+REM llamar sin tener el valor hardcodeado en el código del procedimiento.
+REM Así Flexygo puede actualizar el procedimiento sin perder este valor.
+REM ================================
+echo.
+echo Configurando puerto en base de datos...
+
+set "DB_USER_VAL="
+set "DB_PASSWORD_VAL="
+set "DB_NAME_VAL="
+for /f "usebackq tokens=1,* delims==" %%A in ("%ENV_FILE%") do (
+    if /i "%%A"=="DB_USER"     set "DB_USER_VAL=%%B"
+    if /i "%%A"=="DB_PASSWORD" set "DB_PASSWORD_VAL=%%B"
+    if /i "%%A"=="DB_NAME"     set "DB_NAME_VAL=%%B"
+)
+set DB_USER_VAL=%DB_USER_VAL:"=%
+set DB_PASSWORD_VAL=%DB_PASSWORD_VAL:"=%
+set DB_NAME_VAL=%DB_NAME_VAL:"=%
+
+set "INSTALL_DB_SERVER=%DB_SERVER_VAL%"
+set "INSTALL_DB_USER=%DB_USER_VAL%"
+set "INSTALL_DB_PASSWORD=%DB_PASSWORD_VAL%"
+set "INSTALL_DB_NAME=%DB_NAME_VAL%"
+
+
+REM ================================
 REM CONFIGURAR IIS
 REM Se pasa el puerto elegido como parámetro para que el proxy
 REM redirija correctamente las peticiones a Node.js.
@@ -188,6 +250,36 @@ REM ================================
 echo.
 echo Configurando IIS...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%PROJECT_DIR%scriptsInstalacion\iis.ps1" -Port %CHOSEN_PORT%
+
+
+REM ================================
+REM GUARDAR PUERTO IIS EN BASE DE DATOS
+REM Se detecta el puerto real en que escucha IIS (puede ser 80, 8080 u otro)
+REM y se guarda en Configuracion.PuertoIIS para que pPers_ReiniciarCuentas
+REM construya la URL correcta sin tener el puerto hardcodeado.
+REM ================================
+echo.
+echo Detectando puerto de IIS...
+set "IIS_PORT=80"
+for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command "(Get-WebBinding -Name 'Default Web Site' -ErrorAction SilentlyContinue | Select-Object -First 1).bindingInformation.Split(':')[1]"`) do set "IIS_PORT=%%P"
+echo Puerto IIS detectado: %IIS_PORT%
+
+echo Configurando puerto en base de datos...
+set "INSTALL_PORT=%IIS_PORT%"
+
+powershell -NoProfile -Command ^
+    "$s=$env:INSTALL_DB_SERVER; $d=$env:INSTALL_DB_NAME; $u=$env:INSTALL_DB_USER; $p=$env:INSTALL_DB_PASSWORD; $port=$env:INSTALL_PORT;" ^
+    "$connStr='Server='+$s+';Database='+$d+';User Id='+$u+';Password='+$p+';TrustServerCertificate=True;';" ^
+    "try {" ^
+    "  $conn=New-Object System.Data.SqlClient.SqlConnection($connStr); $conn.Open();" ^
+    "  $cmd=$conn.CreateCommand();" ^
+    "  $sql='IF EXISTS(SELECT 1 FROM Configuracion WHERE Parametro=''PuertoIIS'') UPDATE Configuracion SET ValorString='''+$port+''',FechaInsertUpdate=GETDATE() WHERE Parametro=''PuertoIIS'' ELSE INSERT INTO Configuracion(Parametro,ValorString)VALUES(''PuertoIIS'','''+$port+''')';" ^
+    "  $cmd.CommandText=$sql; $cmd.ExecuteNonQuery()|Out-Null; $conn.Close();" ^
+    "  Write-Host ('Puerto IIS '+$port+' guardado en base de datos. OK.')" ^
+    "} catch {" ^
+    "  Write-Host ('AVISO: No se pudo guardar el puerto en BD: '+$_.Exception.Message);" ^
+    "  Write-Host ('Ejecute manualmente: INSERT INTO Configuracion(Parametro,ValorString)VALUES(''PuertoIIS'','''+$port+''')')" ^
+    "}"
 
 
 REM ================================
