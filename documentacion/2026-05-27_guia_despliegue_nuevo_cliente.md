@@ -109,6 +109,25 @@ Si el procedimiento no está actualizado aún, consultar con el coordinador del 
 
 ## Problemas conocidos y soluciones
 
+### Error 15281 — SQL Server bloqueó el acceso a sp_OACreate
+
+**Causa:** "Ole Automation Procedures" está desactivado en SQL Server. El procedimiento `pPers_ReiniciarCuentas` usa `sp_OACreate` para hacer llamadas HTTP, y esta opción viene deshabilitada por defecto por seguridad.
+
+**Solución:** Ejecutar en SSMS como administrador:
+```sql
+sp_configure 'show advanced options', 1;
+GO
+RECONFIGURE;
+GO
+sp_configure 'Ole Automation Procedures', 1;
+GO
+RECONFIGURE;
+GO
+```
+No requiere reiniciar SQL Server. Hay que hacerlo en cada servidor de cliente.
+
+---
+
 ### IIS devuelve 404 en `/api/health` pero Node.js funciona en `localhost:PUERTO`
 
 **Causa:** El puerto de IIS en este servidor no es el 80 estándar.
